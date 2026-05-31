@@ -96,8 +96,11 @@ class PINNTrainer(BaseTrainer):
             device_manager: Optional device manager override.
         """
         self.config = config
-        self.device_manager = device_manager or DeviceManager(prefer_mixed_precision=config.trainer.mixed_precision)
-        self.model = model.to(self.device_manager.device)
+        self.device_manager = device_manager or DeviceManager(
+            preferred_device=config.trainer.device,
+            prefer_mixed_precision=config.trainer.mixed_precision,
+        )
+        self.model = self.device_manager.move_module(model)
         self.loss_fn = TotalLoss(config.losses)
         self.optimizer = Adam(
             self.model.parameters(),
@@ -112,9 +115,13 @@ class PINNTrainer(BaseTrainer):
         )
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.device_manager.mixed_precision)
         self.checkpoints = CheckpointManager(config.paths.checkpoints_dir)
-        self.writer = self._create_writer(config.paths.tensorboard_dir)
+        self.writer = self._create_writer(
+            log_dir=config.paths.tensorboard_dir,
+            run_name=config.trainer.run_name,
+            enabled=config.trainer.tensorboard_enabled,
+        )
         self.logger = configure_logger(
-            name="PINNTrainer",
+            name=f"PINNTrainer[{config.trainer.run_name}]",
             log_file=str(Path(config.paths.logs_dir) / "training.log"),
         )
         self.csv_log_path = Path(config.paths.logs_dir) / "training_metrics.csv"
@@ -123,22 +130,38 @@ class PINNTrainer(BaseTrainer):
         self.start_epoch = 0
         self.history: dict[str, list[float]] = {"train_total_loss": [], "validation_total_loss": []}
         self._initialize_csv_log()
+        self._log_runtime_summary()
         if config.trainer.resume_from:
             self.resume(config.trainer.resume_from)
 
     @staticmethod
-    def _create_writer(log_dir: str):
+    def _create_writer(log_dir: str, run_name: str, enabled: bool):
         """Create a TensorBoard writer or fallback no-op writer.
 
         Args:
             log_dir: TensorBoard log directory.
+            run_name: Named training run.
+            enabled: Whether TensorBoard logging is enabled.
 
         Returns:
             SummaryWriter | _NullSummaryWriter: Active metrics writer.
         """
-        if SummaryWriter is None:
+        if not enabled or SummaryWriter is None:
             return _NullSummaryWriter()
-        return SummaryWriter(log_dir=log_dir)
+        return SummaryWriter(log_dir=log_dir, comment=run_name)
+
+    def _log_runtime_summary(self) -> None:
+        """Emit run-level metadata to logs and TensorBoard."""
+
+        self.logger.info(
+            "Run %s | artifacts %s | device %s",
+            self.config.trainer.run_name,
+            self.config.paths.run_dir,
+            self.device_manager.summary(),
+        )
+        self.writer.add_text("run/name", self.config.trainer.run_name, 0)
+        self.writer.add_text("run/device", self.device_manager.summary(), 0)
+        self.writer.add_text("run/artifacts_dir", self.config.paths.run_dir, 0)
 
     def _initialize_csv_log(self) -> None:
         """Initialize the CSV metrics log.
@@ -380,6 +403,17 @@ class _NullSummaryWriter:
             global_step: Step or epoch index.
         """
         del tag, scalar_value, global_step
+
+    def add_text(self, tag: str, text_string: str, global_step: int) -> None:
+        """Ignore a text logging request.
+
+        Args:
+            tag: Text tag.
+            text_string: Text payload.
+            global_step: Step or epoch index.
+        """
+
+        del tag, text_string, global_step
 
     def flush(self) -> None:
         """No-op flush for API compatibility."""

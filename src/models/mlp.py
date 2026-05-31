@@ -40,7 +40,15 @@ def activation_factory(name: str) -> Callable[[], nn.Module]:
 class MLP(nn.Module):
     """Configurable feed-forward network."""
 
-    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, activation: str, dropout: float) -> None:
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        activation: str,
+        dropout: float,
+        skip_connections: bool = False,
+    ) -> None:
         """Initialize the MLP backbone.
 
         Args:
@@ -49,6 +57,8 @@ class MLP(nn.Module):
             num_layers: Total number of linear layers including the output layer.
             activation: Activation function name.
             dropout: Dropout probability between hidden layers.
+            skip_connections: Whether residual skip connections should be used
+                between hidden layers when shapes are compatible.
 
         Raises:
             ValueError: If fewer than two layers are requested.
@@ -57,16 +67,17 @@ class MLP(nn.Module):
         if num_layers < 2:
             raise ValueError("num_layers must be at least 2")
         act = activation_factory(activation)
-        layers: list[nn.Module] = []
+        self.skip_connections = skip_connections
+        self.hidden_layers = nn.ModuleList()
+        self.activations = nn.ModuleList()
+        self.dropouts = nn.ModuleList()
         current_dim = input_dim
         for _ in range(num_layers - 1):
-            layers.append(nn.Linear(current_dim, hidden_dim))
-            layers.append(act())
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
+            self.hidden_layers.append(nn.Linear(current_dim, hidden_dim))
+            self.activations.append(act())
+            self.dropouts.append(nn.Dropout(dropout) if dropout > 0.0 else nn.Identity())
             current_dim = hidden_dim
-        layers.append(nn.Linear(current_dim, 1))
-        self.network = nn.Sequential(*layers)
+        self.output_layer = nn.Linear(current_dim, 1)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         """Run a forward pass.
@@ -78,4 +89,10 @@ class MLP(nn.Module):
             torch.Tensor: Network output tensor.
         """
 
-        return self.network(features)
+        hidden = features
+        for layer, activation, dropout in zip(self.hidden_layers, self.activations, self.dropouts):
+            residual = hidden
+            hidden = dropout(activation(layer(hidden)))
+            if self.skip_connections and hidden.shape == residual.shape:
+                hidden = hidden + residual
+        return self.output_layer(hidden)

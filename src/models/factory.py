@@ -31,4 +31,5 @@ class ModelFactory:
             num_layers=config.num_layers,
             activation=config.activation,
             dropout=config.dropout,
+            skip_connections=config.skip_connections,
         )

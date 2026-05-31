@@ -34,24 +34,33 @@ class DeviceManager:
         accelerated hardware without changing business logic.
     """
 
-    def __init__(self, prefer_mixed_precision: bool = True) -> None:
+    def __init__(self, preferred_device: str = "auto", prefer_mixed_precision: bool = True) -> None:
         """Initialize the device manager.
 
         Args:
+            preferred_device: Requested device backend. Supported values are
+                ``auto``, ``cuda``, ``mps``, and ``cpu``.
             prefer_mixed_precision: Whether to enable mixed precision on CUDA.
         """
         self.context = DeviceContext(
-            device=self._resolve_device(),
+            device=self._resolve_device(preferred_device),
             mixed_precision=prefer_mixed_precision and torch.cuda.is_available(),
         )
 
     @staticmethod
-    def _resolve_device() -> torch.device:
+    def _resolve_device(preferred_device: str) -> torch.device:
         """Resolve the preferred execution device.
 
         Returns:
             torch.device: CUDA, MPS, or CPU device in priority order.
         """
+        choice = preferred_device.lower()
+        if choice == "cuda":
+            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if choice == "mps":
+            return torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        if choice == "cpu":
+            return torch.device("cpu")
         if torch.cuda.is_available():
             return torch.device("cuda")
         if torch.backends.mps.is_available():
@@ -94,3 +103,25 @@ class DeviceManager:
         """
 
         return tensor.to(self.context.device)
+
+    def move_module(self, module: torch.nn.Module) -> torch.nn.Module:
+        """Move a module to the configured device.
+
+        Args:
+            module: Module to move.
+
+        Returns:
+            torch.nn.Module: Device-placed module.
+        """
+
+        return module.to(self.context.device)
+
+    def summary(self) -> str:
+        """Return a compact textual description of the runtime device setup.
+
+        Returns:
+            str: Human-readable device summary.
+        """
+
+        precision = "mixed_precision" if self.mixed_precision else "full_precision"
+        return f"{self.device.type}:{precision}"

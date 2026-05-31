@@ -28,7 +28,7 @@ def main() -> None:
     set_seed(config.seed)
 
     _, _, _, _, test_policies = build_dataloaders(config)
-    device_manager = DeviceManager(prefer_mixed_precision=False)
+    device_manager = DeviceManager(preferred_device=config.trainer.device, prefer_mixed_precision=False)
     model = build_model(config)
     checkpoint_path = Path(config.paths.checkpoints_dir) / "best_model.pt"
     if checkpoint_path.exists():

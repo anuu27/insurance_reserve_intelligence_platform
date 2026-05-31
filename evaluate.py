@@ -30,7 +30,7 @@ def main() -> None:
     set_seed(config.seed)
 
     _, _, test_loader, test_dataset, _ = build_dataloaders(config)
-    device_manager = DeviceManager(prefer_mixed_precision=False)
+    device_manager = DeviceManager(preferred_device=config.trainer.device, prefer_mixed_precision=False)
     model = build_model(config)
 
     checkpoint_path = Path(config.paths.checkpoints_dir) / "best_model.pt"
@@ -40,7 +40,10 @@ def main() -> None:
 
     evaluator = ReserveEvaluator(model=model, device=device_manager.device)
     result = evaluator.evaluate(test_loader)
-    print(f"MSE={result.mse:.6f} MAE={result.mae:.6f} RMSE={result.rmse:.6f} R2={result.r2:.6f}")
+    print(
+        f"run={config.trainer.run_name} device={device_manager.summary()} "
+        f"MSE={result.mse:.6f} MAE={result.mae:.6f} RMSE={result.rmse:.6f} R2={result.r2:.6f}"
+    )
 
     sample_features = torch.stack([test_dataset[0]["features"], test_dataset[1]["features"]])
     output_csv = Path(config.paths.reports_dir) / "sensitivity_report.csv"

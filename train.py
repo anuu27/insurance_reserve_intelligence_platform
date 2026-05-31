@@ -11,6 +11,7 @@ from pathlib import Path
 from src.pipeline import build_dataloaders, build_model
 from src.trainers.trainer import PINNTrainer
 from src.utils.config import ConfigLoader, ensure_directories
+from src.utils.device import DeviceManager
 from src.utils.seed import set_seed
 
 
@@ -27,7 +28,11 @@ def main() -> None:
 
     train_loader, validation_loader, _, _, _ = build_dataloaders(config)
     model = build_model(config)
-    trainer = PINNTrainer(model=model, config=config)
+    device_manager = DeviceManager(
+        preferred_device=config.trainer.device,
+        prefer_mixed_precision=config.trainer.mixed_precision,
+    )
+    trainer = PINNTrainer(model=model, config=config, device_manager=device_manager)
     trainer.fit(train_loader=train_loader, validation_loader=validation_loader)
 
 

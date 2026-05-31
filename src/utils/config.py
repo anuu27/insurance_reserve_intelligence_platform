@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from pathlib import Path
+import re
 from typing import Any, Dict, Type, TypeVar, cast, get_type_hints
 
 import yaml
@@ -63,6 +64,7 @@ class PathConfig:
         plots_dir: Directory for exported plots.
         tensorboard_dir: Directory for TensorBoard outputs.
         data_dir: Directory for input data assets.
+        run_dir: Run-scoped artifact directory.
     """
 
     artifacts_dir: str = "artifacts"
@@ -72,6 +74,7 @@ class PathConfig:
     plots_dir: str = "artifacts/plots"
     tensorboard_dir: str = "artifacts/tensorboard"
     data_dir: str = "data"
+    run_dir: str = "artifacts/default"
 
 
 @dataclass(slots=True)
@@ -136,6 +139,7 @@ class ModelConfig:
     num_layers: int = 4
     activation: str = "tanh"
     dropout: float = 0.1
+    skip_connections: bool = False
 
 
 @dataclass(slots=True)
@@ -171,6 +175,9 @@ class TrainerConfig:
     scheduler_factor: float = 0.5
     checkpoint_every: int = 5
     resume_from: str | None = None
+    device: str = "auto"
+    run_name: str = "default"
+    tensorboard_enabled: bool = True
     mixed_precision: bool = True
 
 
@@ -294,5 +301,28 @@ def ensure_directories(config: ExperimentConfig) -> None:
         stable place to be written during model development.
     """
 
+    run_name = _sanitize_run_name(config.trainer.run_name or config.experiment_name)
+    run_dir = Path(config.paths.artifacts_dir) / run_name
+    config.paths.run_dir = str(run_dir)
+    config.paths.checkpoints_dir = str(run_dir / "checkpoints")
+    config.paths.logs_dir = str(run_dir / "logs")
+    config.paths.reports_dir = str(run_dir / "reports")
+    config.paths.plots_dir = str(run_dir / "plots")
+    config.paths.tensorboard_dir = str(run_dir / "tensorboard")
+
     for item in fields(config.paths):
         Path(getattr(config.paths, item.name)).mkdir(parents=True, exist_ok=True)
+
+
+def _sanitize_run_name(name: str) -> str:
+    """Convert a free-form run name into a filesystem-safe directory name.
+
+    Args:
+        name: User-supplied or configured run name.
+
+    Returns:
+        str: Sanitized run name safe for artifact directory creation.
+    """
+
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())
+    return cleaned or "default"

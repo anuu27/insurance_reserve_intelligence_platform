@@ -44,6 +44,7 @@ model:
   num_layers: 4
   activation: tanh
   dropout: 0.1
+  skip_connections: false
 
 losses:
   lambda_data: 1.0
@@ -52,6 +53,7 @@ losses:
   lambda_reg: 1.0e-6
 
 trainer:
+  run_name: actuary_twin_term_life_pinn
   epochs: 20
   learning_rate: 0.001
   weight_decay: 1.0e-5
@@ -61,6 +63,8 @@ trainer:
   scheduler_factor: 0.5
   checkpoint_every: 2
   resume_from:
+  device: auto
+  tensorboard_enabled: true
   mixed_precision: true
 
 stress:

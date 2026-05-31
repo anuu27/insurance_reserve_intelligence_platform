@@ -15,7 +15,15 @@ from src.models.mlp import MLP
 class PINNReserveModel(BaseReserveModel):
     """Physics-informed reserve estimator implemented with an MLP backbone."""
 
-    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, activation: str, dropout: float) -> None:
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        activation: str,
+        dropout: float,
+        skip_connections: bool = False,
+    ) -> None:
         """Initialize the reserve PINN.
 
         Args:
@@ -24,6 +32,8 @@ class PINNReserveModel(BaseReserveModel):
             num_layers: Total number of linear layers including the output layer.
             activation: Activation function name.
             dropout: Dropout probability between hidden layers.
+            skip_connections: Whether residual skip connections should be used in
+                the hidden backbone.
         """
         super().__init__()
         self.backbone = MLP(
@@ -32,6 +42,7 @@ class PINNReserveModel(BaseReserveModel):
             num_layers=num_layers,
             activation=activation,
             dropout=dropout,
+            skip_connections=skip_connections,
         )
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
