@@ -1,4 +1,8 @@
-"""Evaluate the trained ActuaryTwin model."""
+"""Evaluate the trained ActuaryTwin model.
+
+Created: 2026-05-31
+Purpose: Evaluate reserve accuracy and export sensitivity analytics.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,12 @@ from src.utils.seed import set_seed
 
 
 def main() -> None:
+    """Run the evaluation entrypoint.
+
+    Business Interpretation:
+        This script validates the trained reserve engine before it is used in
+        downstream analysis such as optimization or stress testing.
+    """
     config = ConfigLoader.load(Path("configs/config.yaml"))
     ensure_directories(config)
     set_seed(config.seed)

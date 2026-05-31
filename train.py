@@ -1,4 +1,8 @@
-"""Train the ActuaryTwin PINN model."""
+"""Train the ActuaryTwin PINN model.
+
+Created: 2026-05-31
+Purpose: Launch an end-to-end training run for the reserve PINN.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,12 @@ from src.utils.seed import set_seed
 
 
 def main() -> None:
+    """Run the training entrypoint.
+
+    Business Interpretation:
+        This script is the operational starting point for fitting a new reserve
+        surrogate from configured actuarial assumptions.
+    """
     config = ConfigLoader.load(Path("configs/config.yaml"))
     ensure_directories(config)
     set_seed(config.seed)

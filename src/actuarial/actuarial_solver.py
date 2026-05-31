@@ -1,4 +1,8 @@
-"""Classical actuarial reserve solvers."""
+"""Classical actuarial reserve solvers.
+
+Created: 2026-05-31
+Purpose: Define classical numerical solvers for term-life reserve trajectories.
+"""
 
 from __future__ import annotations
 
@@ -13,24 +17,81 @@ from src.actuarial.policy import Policy
 
 @dataclass(slots=True)
 class ReserveTrajectory:
-    """Numerical reserve solution across a policy term."""
+    """Numerical reserve solution across a policy term.
+
+    Attributes:
+        times: Time grid over the policy term.
+        reserves: Reserve values aligned to ``times``.
+
+    Scientific Context:
+        The reserve trajectory is a discrete approximation to the continuous reserve
+        function ``V(t)`` governed by the Thiele differential equation.
+
+    Business Interpretation:
+        This object is the liability path of a policy through time. Actuaries and
+        finance teams can read it as "how much money should be held at each point
+        in the contract to remain adequately reserved."
+    """
 
     times: np.ndarray
     reserves: np.ndarray
 
 
 class BaseActuarialSolver(ABC):
-    """Abstract base class for classical reserve solvers."""
+    """Abstract base class for classical reserve solvers.
+
+    Scientific Context:
+        Classical solvers generate benchmark reserve trajectories by directly
+        integrating the governing liability equation rather than approximating it
+        with a learned surrogate.
+
+    Business Interpretation:
+        This is the trusted actuarial engine used to produce ground-truth reserve
+        paths for validation, benchmarking, and model governance.
+    """
 
     @abstractmethod
     def solve(self, policy: Policy, num_steps: int) -> ReserveTrajectory:
-        """Solve the reserve equation for a policy."""
+        """Solve the reserve equation for a policy.
+
+        Args:
+            policy: Policy to value.
+            num_steps: Number of evaluation steps across the term.
+
+        Returns:
+            ReserveTrajectory: Numerical reserve path for the policy.
+        """
 
 
 class ThieleSolver(BaseActuarialSolver):
-    """Numerically solve the term-life Thiele reserve equation."""
+    """Numerically solve the term-life Thiele reserve equation.
 
-    def __init__(self, method: str = "solve_ivp", integration_step: float = 0.25, rtol: float = 1e-6, atol: float = 1e-8) -> None:
+    Scientific Context:
+        The solver integrates ``dV/dt = rV + P - μ(S - V)`` backward from the
+        terminal condition ``V(T)=0``. This is the standard continuous-time
+        reserve formulation for a one-state term-life contract under mortality and
+        interest assumptions.
+
+    Business Interpretation:
+        This class answers the question: "Given product assumptions, what reserve
+        profile should the insurer hold over the life of the policy?"
+    """
+
+    def __init__(
+        self,
+        method: str = "solve_ivp",
+        integration_step: float = 0.25,
+        rtol: float = 1e-6,
+        atol: float = 1e-8,
+    ) -> None:
+        """Initialize the actuarial solver.
+
+        Args:
+            method: Numerical method name. Supported values are ``solve_ivp`` and ``rk4``.
+            integration_step: Maximum integration step size.
+            rtol: Relative tolerance for ``solve_ivp``.
+            atol: Absolute tolerance for ``solve_ivp``.
+        """
         self.method = method
         self.integration_step = integration_step
         self.rtol = rtol
@@ -38,12 +99,47 @@ class ThieleSolver(BaseActuarialSolver):
 
     @staticmethod
     def _rhs(time_point: float, reserve: np.ndarray, policy: Policy) -> np.ndarray:
+        """Evaluate the reserve differential equation right-hand side.
+
+        Args:
+            time_point: Current elapsed policy time.
+            reserve: Current reserve state vector.
+            policy: Policy assumptions used in the equation.
+
+        Returns:
+            np.ndarray: Single-element derivative vector.
+
+        Scientific Context:
+            The derivative combines investment growth, premium inflow, and expected
+            mortality outgo net of reserve release.
+
+        Business Interpretation:
+            This is the instantaneous liability drift of the policy at a single
+            point in time.
+        """
         reserve_value = float(reserve[0])
         mortality = policy.mortality_profile.intensity_at(time_point)
         derivative = policy.interest_rate * reserve_value + policy.premium - mortality * (policy.sum_assured - reserve_value)
         return np.asarray([derivative], dtype=float)
 
     def _solve_rk4(self, policy: Policy, num_steps: int) -> ReserveTrajectory:
+        """Solve the reserve equation using a hand-coded RK4 routine.
+
+        Args:
+            policy: Policy to value.
+            num_steps: Number of points in the returned trajectory.
+
+        Returns:
+            ReserveTrajectory: Backward-solved reserve trajectory.
+
+        Scientific Context:
+            Fourth-order Runge-Kutta is a fixed-step explicit integration scheme
+            that provides a transparent numerical baseline.
+
+        Business Interpretation:
+            This gives a stable reserve path using a simple actuarial numerical
+            method that is easy to audit.
+        """
         grid = np.linspace(float(policy.term), 0.0, num_steps, dtype=float)
         reserves = np.zeros_like(grid)
         reserves[0] = 0.0
@@ -61,6 +157,26 @@ class ThieleSolver(BaseActuarialSolver):
         return ReserveTrajectory(times=grid[::-1], reserves=reserves[::-1])
 
     def _solve_ivp(self, policy: Policy, num_steps: int) -> ReserveTrajectory:
+        """Solve the reserve equation with SciPy's adaptive integrator.
+
+        Args:
+            policy: Policy to value.
+            num_steps: Number of points in the returned trajectory.
+
+        Returns:
+            ReserveTrajectory: Backward-solved reserve trajectory.
+
+        Raises:
+            RuntimeError: If SciPy fails to integrate the reserve equation.
+
+        Scientific Context:
+            ``solve_ivp`` adaptively controls local integration error, which is
+            useful when reserve dynamics become steep under stressed assumptions.
+
+        Business Interpretation:
+            This is the higher-robustness production-style solver used when the
+            liability profile needs more numerical stability.
+        """
         evaluation_times = np.linspace(float(policy.term), 0.0, num_steps, dtype=float)
         solution = solve_ivp(
             fun=lambda t, y: self._rhs(t, y, policy),
@@ -77,7 +193,19 @@ class ThieleSolver(BaseActuarialSolver):
         return ReserveTrajectory(times=solution.t[::-1], reserves=solution.y[0][::-1])
 
     def solve(self, policy: Policy, num_steps: int) -> ReserveTrajectory:
-        """Solve the reserve trajectory using the configured numerical routine."""
+        """Solve the reserve trajectory using the configured numerical routine.
+
+        Args:
+            policy: Policy to value.
+            num_steps: Number of points in the returned trajectory.
+
+        Returns:
+            ReserveTrajectory: Reserve path computed by the configured solver.
+
+        Business Interpretation:
+            This method is the main actuarial valuation entry point for generating
+            reserve curves used in training, validation, and scenario analysis.
+        """
 
         if self.method.lower() == "rk4":
             return self._solve_rk4(policy=policy, num_steps=num_steps)

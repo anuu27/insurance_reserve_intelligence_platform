@@ -1,4 +1,8 @@
-"""Policy simulator tests."""
+"""Policy simulator tests.
+
+Created: 2026-05-31
+Purpose: Validate policy simulation behavior used by the research pipeline.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ from src.data.simulator import PolicySimulator
 
 
 def test_policy_simulator_generates_requested_count() -> None:
+    """Verify that the simulator returns the requested number of valid policies."""
     simulator = PolicySimulator(
         age_range=(25, 60),
         term_range=(5, 20),

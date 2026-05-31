@@ -1,4 +1,8 @@
-"""PINN reserve model."""
+"""PINN reserve model.
+
+Created: 2026-05-31
+Purpose: Define the physics-informed reserve model built on the MLP backbone.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,15 @@ class PINNReserveModel(BaseReserveModel):
     """Physics-informed reserve estimator implemented with an MLP backbone."""
 
     def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, activation: str, dropout: float) -> None:
+        """Initialize the reserve PINN.
+
+        Args:
+            input_dim: Input feature dimension.
+            hidden_dim: Width of hidden layers.
+            num_layers: Total number of linear layers including the output layer.
+            activation: Activation function name.
+            dropout: Dropout probability between hidden layers.
+        """
         super().__init__()
         self.backbone = MLP(
             input_dim=input_dim,
@@ -22,6 +35,13 @@ class PINNReserveModel(BaseReserveModel):
         )
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        """Predict reserve values."""
+        """Predict reserve values.
+
+        Args:
+            features: Input feature tensor.
+
+        Returns:
+            torch.Tensor: Predicted reserve tensor.
+        """
 
         return self.backbone(features)

@@ -1,4 +1,8 @@
-"""Policy simulation engine."""
+"""Policy simulation engine.
+
+Created: 2026-05-31
+Purpose: Generate synthetic term-life policies and scenario-adjusted portfolios.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,14 @@ from src.data.mortality_loader import MortalityDataSource
 
 @dataclass(slots=True)
 class ScenarioDefinition:
-    """Scenario overrides for synthetic policy generation."""
+    """Scenario overrides for synthetic policy generation.
+
+    Attributes:
+        interest_rate_shift: Additive interest-rate adjustment.
+        mortality_multiplier: Multiplicative mortality adjustment.
+        premium_multiplier: Multiplicative premium adjustment.
+        sum_assured_multiplier: Multiplicative sum-assured adjustment.
+    """
 
     interest_rate_shift: float = 0.0
     mortality_multiplier: float = 1.0
@@ -36,6 +47,19 @@ class PolicySimulator:
         mortality_shape: float = 1.08,
         seed: int = 42,
     ) -> None:
+        """Initialize the policy simulator.
+
+        Args:
+            age_range: Inclusive age sampling bounds.
+            term_range: Inclusive term sampling bounds.
+            premium_range: Premium sampling bounds.
+            interest_rate_range: Interest-rate sampling bounds.
+            sum_assured_range: Sum-assured sampling bounds.
+            mortality_source: Optional external mortality source.
+            mortality_scale: Base level for synthetic mortality.
+            mortality_shape: Growth factor for synthetic mortality.
+            seed: Random seed for reproducibility.
+        """
         self.age_range = age_range
         self.term_range = term_range
         self.premium_range = premium_range
@@ -47,12 +71,32 @@ class PolicySimulator:
         self.rng = np.random.default_rng(seed)
 
     def _synthetic_mortality_profile(self, age: int, term: int, multiplier: float = 1.0) -> MortalityProfile:
+        """Create a synthetic mortality profile.
+
+        Args:
+            age: Inception age for the policy.
+            term: Policy term in years.
+            multiplier: Scenario multiplier applied to intensities.
+
+        Returns:
+            MortalityProfile: Synthetic mortality profile.
+        """
         times = np.linspace(0.0, float(term), term + 1, dtype=float)
         ages = age + times
         rates = self.mortality_scale * np.power(self.mortality_shape, ages - age) * multiplier
         return MortalityProfile(times=times, intensities=rates, source="synthetic")
 
     def _mortality_profile(self, age: int, term: int, multiplier: float = 1.0) -> MortalityProfile:
+        """Resolve either external or synthetic mortality assumptions.
+
+        Args:
+            age: Inception age for the policy.
+            term: Policy term in years.
+            multiplier: Scenario multiplier applied to intensities.
+
+        Returns:
+            MortalityProfile: Policy mortality profile.
+        """
         if self.mortality_source is not None:
             profile = self.mortality_source.load(age=age, term=term)
             return MortalityProfile(
@@ -72,6 +116,20 @@ class PolicySimulator:
         sum_assured: float,
         mortality_multiplier: float = 1.0,
     ) -> Policy:
+        """Build a single policy object.
+
+        Args:
+            policy_id: Unique policy identifier.
+            age: Age at inception.
+            term: Policy term in years.
+            premium: Premium level.
+            interest_rate: Interest-rate assumption.
+            sum_assured: Death benefit amount.
+            mortality_multiplier: Scenario multiplier for mortality.
+
+        Returns:
+            Policy: Structured policy instance.
+        """
         return Policy(
             policy_id=policy_id,
             age=age,
@@ -83,7 +141,14 @@ class PolicySimulator:
         )
 
     def generate_random_policies(self, count: int) -> list[Policy]:
-        """Generate randomly sampled policies."""
+        """Generate randomly sampled policies.
+
+        Args:
+            count: Number of policies to sample.
+
+        Returns:
+            list[Policy]: Randomly sampled policies.
+        """
 
         policies: list[Policy] = []
         for index in range(count):
@@ -96,7 +161,14 @@ class PolicySimulator:
         return policies
 
     def generate_stratified_policies(self, counts_by_age_band: dict[tuple[int, int], int]) -> list[Policy]:
-        """Generate policies by age strata."""
+        """Generate policies by age strata.
+
+        Args:
+            counts_by_age_band: Mapping from age band to desired policy count.
+
+        Returns:
+            list[Policy]: Stratified policies across the requested age bands.
+        """
 
         policies: list[Policy] = []
         start_index = 0
@@ -121,7 +193,15 @@ class PolicySimulator:
         return policies
 
     def generate_scenario_policies(self, base_policies: Iterable[Policy], scenario: ScenarioDefinition) -> list[Policy]:
-        """Clone policies under a user-specified scenario."""
+        """Clone policies under a user-specified scenario.
+
+        Args:
+            base_policies: Baseline policies to clone.
+            scenario: Scenario overrides to apply.
+
+        Returns:
+            list[Policy]: Scenario-adjusted policies.
+        """
 
         stressed: list[Policy] = []
         for policy in base_policies:

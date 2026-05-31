@@ -1,4 +1,8 @@
-"""Insurance liability digital twin workflows."""
+"""Insurance liability digital twin workflows.
+
+Created: 2026-05-31
+Purpose: Simulate reserve behavior through time, scenarios, regimes, and portfolios.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +19,18 @@ from src.utils.config import DigitalTwinConfig
 
 @dataclass(slots=True)
 class RegimeDefinition:
-    """Macroeconomic regime multipliers."""
+    """Macroeconomic regime multipliers.
+
+    Attributes:
+        name: Regime name.
+        interest_rate_shift: Additive shock to interest rates.
+        mortality_multiplier: Multiplicative mortality shock.
+        inflation_multiplier: Multiplicative inflation proxy applied to benefits.
+
+    Business Interpretation:
+        This object packages a macro narrative such as recession or mortality
+        crisis into model-ready shocks.
+    """
 
     name: str
     interest_rate_shift: float
@@ -24,7 +39,16 @@ class RegimeDefinition:
 
 
 class DigitalTwinEngine:
-    """Scenario-aware digital twin for insurance liabilities."""
+    """Scenario-aware digital twin for insurance liabilities.
+
+    Scientific Context:
+        The digital twin is a scenario-queryable surrogate over the liability
+        state space, allowing repeated reserve evaluations under changing inputs.
+
+    Business Interpretation:
+        This is the interactive liability lab for forecasting, what-if analysis,
+        and portfolio simulation.
+    """
 
     def __init__(
         self,
@@ -33,12 +57,29 @@ class DigitalTwinEngine:
         config: DigitalTwinConfig,
         simulator: PolicySimulator | None = None,
     ) -> None:
+        """Initialize the digital twin engine.
+
+        Args:
+            model: Trained reserve model.
+            device: Execution device for inference.
+            config: Digital twin simulation settings.
+            simulator: Optional policy simulator used for scenario cloning.
+        """
         self.model = model.to(device)
         self.device = device
         self.config = config
         self.simulator = simulator
 
     def _feature_tensor(self, policy: Policy, time_point: float) -> torch.Tensor:
+        """Build a single-step model input from a policy and time point.
+
+        Args:
+            policy: Policy to evaluate.
+            time_point: Elapsed policy time.
+
+        Returns:
+            torch.Tensor: Single-row model input tensor.
+        """
         return torch.tensor(
             [[
                 time_point,
@@ -53,7 +94,19 @@ class DigitalTwinEngine:
         )
 
     def reserve_forecast(self, policy: Policy, steps: int | None = None) -> pd.DataFrame:
-        """Forecast reserves over time for a policy."""
+        """Forecast reserves over time for a policy.
+
+        Args:
+            policy: Policy to forecast.
+            steps: Optional number of forecast steps.
+
+        Returns:
+            pd.DataFrame: Time-indexed reserve forecast.
+
+        Business Interpretation:
+            This produces the liability path that an actuary or CFO would inspect
+            when asking how reserves evolve through the contract life.
+        """
 
         self.model.eval()
         horizon = steps or self.config.forecast_horizon
@@ -65,7 +118,22 @@ class DigitalTwinEngine:
         return pd.DataFrame({"time": times, "reserve": reserves, "policy_id": policy.policy_id})
 
     def scenario_simulation(self, policies: list[Policy], scenario: ScenarioDefinition) -> pd.DataFrame:
-        """Run a direct what-if scenario across a portfolio."""
+        """Run a direct what-if scenario across a portfolio.
+
+        Args:
+            policies: Baseline policies to simulate.
+            scenario: Scenario shock definition.
+
+        Returns:
+            pd.DataFrame: Baseline-versus-scenario reserve comparison table.
+
+        Raises:
+            ValueError: If no simulator is available for generating scenario clones.
+
+        Business Interpretation:
+            This is the portfolio what-if tool for changing assumptions and seeing
+            the reserve impact immediately.
+        """
 
         if self.simulator is None:
             raise ValueError("A PolicySimulator is required for scenario simulation.")
@@ -75,7 +143,18 @@ class DigitalTwinEngine:
         return baseline.merge(stressed, on="policy_id", suffixes=("_base", "_scenario"))
 
     def regime_simulation(self, policies: list[Policy]) -> pd.DataFrame:
-        """Simulate predefined macro regimes."""
+        """Simulate predefined macro regimes.
+
+        Args:
+            policies: Policies to simulate under each regime.
+
+        Returns:
+            pd.DataFrame: Reserve outcomes by policy and regime.
+
+        Business Interpretation:
+            This translates macro stories such as inflation or recession into
+            liability outcomes that executives can compare.
+        """
 
         regimes = [
             RegimeDefinition("base", 0.0, 1.0, 1.0),
@@ -96,7 +175,18 @@ class DigitalTwinEngine:
         return pd.DataFrame(rows)
 
     def portfolio_simulation(self, policies: list[Policy]) -> pd.DataFrame:
-        """Predict portfolio-level reserves policy by policy."""
+        """Predict portfolio-level reserves policy by policy.
+
+        Args:
+            policies: Portfolio to value.
+
+        Returns:
+            pd.DataFrame: Policy-level reserves plus portfolio aggregate.
+
+        Business Interpretation:
+            This is the digital twin's portfolio valuation view, useful for capital
+            planning and segment comparisons.
+        """
 
         rows: list[dict[str, float | str]] = []
         self.model.eval()

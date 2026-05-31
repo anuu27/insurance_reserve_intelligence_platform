@@ -1,4 +1,8 @@
-"""Composite training loss."""
+"""Composite training loss.
+
+Created: 2026-05-31
+Purpose: Assemble the weighted PINN objective from all constituent loss terms.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,21 @@ from src.utils.config import LossConfig
 
 @dataclass(slots=True)
 class LossBreakdown:
-    """Named loss components."""
+    """Named loss components.
+
+    Attributes:
+        total: Weighted total loss.
+        data: Supervised reserve-fitting loss.
+        pde: PDE residual loss.
+        boundary: Boundary-condition loss.
+        regularization: L2 regularization penalty.
+        residual: Pointwise PDE residual values.
+
+    Business Interpretation:
+        This breakdown lets researchers and model-risk reviewers see whether model
+        improvement is coming from better data fit, stronger physics compliance,
+        or better boundary adherence.
+    """
 
     total: torch.Tensor
     data: torch.Tensor
@@ -27,9 +45,23 @@ class LossBreakdown:
 
 
 class TotalLoss(nn.Module):
-    """Composite objective for PINN training."""
+    """Composite objective for PINN training.
+
+    Scientific Context:
+        The total objective combines supervised learning, PDE residual matching,
+        terminal boundary enforcement, and optional parameter regularization.
+
+    Business Interpretation:
+        This is the training contract that balances empirical accuracy with
+        actuarial plausibility, which is important for reserve governance.
+    """
 
     def __init__(self, config: LossConfig) -> None:
+        """Initialize the composite loss module.
+
+        Args:
+            config: Loss-weight configuration.
+        """
         super().__init__()
         self.config = config
         self.data_loss = DataLoss()
@@ -44,6 +76,21 @@ class TotalLoss(nn.Module):
         targets: torch.Tensor,
         terms: torch.Tensor,
     ) -> LossBreakdown:
+        """Compute the full PINN loss breakdown.
+
+        Args:
+            model: Reserve prediction model.
+            features: Input features with gradients enabled.
+            targets: Supervised reserve targets.
+            terms: Policy maturity values for the boundary condition.
+
+        Returns:
+            LossBreakdown: Structured loss components and residuals.
+
+        Business Interpretation:
+            The output explains not just whether the model is wrong, but how it is
+            wrong from an actuarial and governance perspective.
+        """
         predictions = model(features)
         data_component = self.data_loss(predictions, targets)
         pde_component, residual = self.pde_loss(features, predictions)

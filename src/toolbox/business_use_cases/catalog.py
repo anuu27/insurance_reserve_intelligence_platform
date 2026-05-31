@@ -1,4 +1,8 @@
-"""Business positioning helpers."""
+"""Business positioning helpers.
+
+Created: 2026-05-31
+Purpose: Store business-use-case mappings used in platform positioning and reports.
+"""
 
 from __future__ import annotations
 

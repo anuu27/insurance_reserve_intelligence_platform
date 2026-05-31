@@ -1,4 +1,8 @@
-"""Generic multilayer perceptron blocks."""
+"""Generic multilayer perceptron blocks.
+
+Created: 2026-05-31
+Purpose: Provide configurable feed-forward neural network building blocks.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,17 @@ from torch import nn
 
 
 def activation_factory(name: str) -> Callable[[], nn.Module]:
-    """Map configuration strings to activation layers."""
+    """Map configuration strings to activation layers.
+
+    Args:
+        name: Activation function name from configuration.
+
+    Returns:
+        Callable[[], nn.Module]: Activation layer constructor.
+
+    Raises:
+        ValueError: If the activation name is unsupported.
+    """
 
     registry: dict[str, Callable[[], nn.Module]] = {
         "relu": nn.ReLU,
@@ -27,6 +41,18 @@ class MLP(nn.Module):
     """Configurable feed-forward network."""
 
     def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, activation: str, dropout: float) -> None:
+        """Initialize the MLP backbone.
+
+        Args:
+            input_dim: Input feature dimension.
+            hidden_dim: Width of hidden layers.
+            num_layers: Total number of linear layers including the output layer.
+            activation: Activation function name.
+            dropout: Dropout probability between hidden layers.
+
+        Raises:
+            ValueError: If fewer than two layers are requested.
+        """
         super().__init__()
         if num_layers < 2:
             raise ValueError("num_layers must be at least 2")
@@ -43,6 +69,13 @@ class MLP(nn.Module):
         self.network = nn.Sequential(*layers)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        """Run a forward pass."""
+        """Run a forward pass.
+
+        Args:
+            features: Input feature tensor.
+
+        Returns:
+            torch.Tensor: Network output tensor.
+        """
 
         return self.network(features)

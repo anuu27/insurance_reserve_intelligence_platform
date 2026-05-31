@@ -1,4 +1,8 @@
-"""Run optimization workflows for the ActuaryTwin platform."""
+"""Run optimization workflows for the ActuaryTwin platform.
+
+Created: 2026-05-31
+Purpose: Execute reserve-driven pricing and target-search workflows.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,12 @@ from src.utils.seed import set_seed
 
 
 def main() -> None:
+    """Run the optimization entrypoint.
+
+    Business Interpretation:
+        This script exposes the model as a decision-support engine for pricing and
+        reserve-target calibration experiments.
+    """
     config = ConfigLoader.load(Path("configs/config.yaml"))
     ensure_directories(config)
     set_seed(config.seed)

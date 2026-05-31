@@ -1,4 +1,8 @@
-"""Digital twin tests."""
+"""Digital twin tests.
+
+Created: 2026-05-31
+Purpose: Validate digital twin reserve forecasting behavior.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from src.data.simulator import PolicySimulator
 
 
 def test_digital_twin_forecast_has_rows() -> None:
+    """Verify that reserve forecasting returns the requested number of rows."""
     config = ConfigLoader.load("configs/config.yaml")
     simulator = PolicySimulator(
         age_range=(40, 40),

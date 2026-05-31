@@ -1,4 +1,8 @@
-"""PINN theory helpers."""
+"""PINN theory helpers.
+
+Created: 2026-05-31
+Purpose: Store core PINN terminology used by the platform and documentation.
+"""
 
 from __future__ import annotations
 

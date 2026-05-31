@@ -1,4 +1,8 @@
-"""Model evaluation and sensitivity analysis."""
+"""Model evaluation and sensitivity analysis.
+
+Created: 2026-05-31
+Purpose: Evaluate predictive quality and compute reserve sensitivities from the trained model.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,18 @@ from src.visualization.sensitivity_plots import plot_sensitivities
 
 @dataclass(slots=True)
 class EvaluationResult:
-    """Summary of reserve model accuracy."""
+    """Summary of reserve model accuracy.
+
+    Attributes:
+        mse: Mean squared error across predictions.
+        mae: Mean absolute error across predictions.
+        rmse: Root mean squared error across predictions.
+        r2: Coefficient of determination.
+
+    Business Interpretation:
+        These metrics summarize how closely the PINN matches actuarial benchmark
+        reserves and therefore how trustworthy it may be for operational use.
+    """
 
     mse: float
     mae: float
@@ -23,14 +38,40 @@ class EvaluationResult:
 
 
 class ReserveEvaluator:
-    """Evaluate reserve predictions and sensitivities."""
+    """Evaluate reserve predictions and sensitivities.
+
+    Scientific Context:
+        This class measures both statistical fit and local derivative behavior of
+        the learned reserve surface.
+
+    Business Interpretation:
+        It supports model validation, assumption review, and driver attribution for
+        reserve movement.
+    """
 
     def __init__(self, model: torch.nn.Module, device: torch.device) -> None:
+        """Initialize the evaluator.
+
+        Args:
+            model: Trained reserve model to evaluate.
+            device: Execution device for inference and autodiff.
+        """
         self.model = model.to(device)
         self.device = device
 
     def evaluate(self, dataloader: DataLoader) -> EvaluationResult:
-        """Compute standard regression metrics."""
+        """Compute standard regression metrics.
+
+        Args:
+            dataloader: Evaluation dataloader containing reserve targets.
+
+        Returns:
+            EvaluationResult: Aggregate predictive-quality metrics.
+
+        Business Interpretation:
+            This method measures how well the PINN reproduces classical reserve
+            values before it is trusted for stress testing or optimization.
+        """
 
         self.model.eval()
         targets: list[np.ndarray] = []
@@ -53,7 +94,22 @@ class ReserveEvaluator:
         return EvaluationResult(mse=mse, mae=mae, rmse=rmse, r2=r2)
 
     def compute_sensitivities(self, features: torch.Tensor) -> pd.DataFrame:
-        """Compute first- and second-order sensitivities with autodiff."""
+        """Compute first- and second-order sensitivities with autodiff.
+
+        Args:
+            features: Feature tensor at which sensitivities will be evaluated.
+
+        Returns:
+            pd.DataFrame: Sensitivity table containing first- and second-order derivatives.
+
+        Scientific Context:
+            The derivatives quantify how the learned reserve surface responds to
+            changes in interest rate, mortality, premium, and sum assured.
+
+        Business Interpretation:
+            These outputs explain reserve movement drivers in plain terms such as
+            rate sensitivity, mortality sensitivity, and pricing sensitivity.
+        """
 
         self.model.eval()
         inputs = features.to(self.device).clone().detach().requires_grad_(True)
@@ -83,7 +139,19 @@ class ReserveEvaluator:
         return frame
 
     def generate_sensitivity_report(self, features: torch.Tensor, output_path: str) -> pd.DataFrame:
-        """Create a CSV sensitivity report and companion plot."""
+        """Create a CSV sensitivity report and companion plot.
+
+        Args:
+            features: Feature tensor at which sensitivities will be evaluated.
+            output_path: CSV path for the tabular report.
+
+        Returns:
+            pd.DataFrame: Generated sensitivity report.
+
+        Business Interpretation:
+            This produces an analyst-friendly artifact that can be shared with
+            actuarial, finance, or risk stakeholders.
+        """
 
         report = self.compute_sensitivities(features)
         report.to_csv(output_path, index=False)

@@ -1,4 +1,8 @@
-"""PDE residual loss for PINN training."""
+"""PDE residual loss for PINN training.
+
+Created: 2026-05-31
+Purpose: Penalize violations of the Thiele reserve equation during training.
+"""
 
 from __future__ import annotations
 
@@ -7,13 +11,41 @@ from torch import nn
 
 
 class PDELoss(nn.Module):
-    """Residual minimization for the term-life Thiele equation."""
+    """Residual minimization for the term-life Thiele equation.
+
+    Scientific Context:
+        This module enforces the physics-informed part of the PINN objective by
+        penalizing deviations from the reserve differential equation.
+
+    Business Interpretation:
+        It discourages the model from producing reserve predictions that may fit
+        sampled data but violate actuarial liability mechanics.
+    """
 
     def __init__(self) -> None:
+        """Initialize the PDE residual loss module."""
         super().__init__()
         self.criterion = nn.MSELoss()
 
     def forward(self, features: torch.Tensor, predictions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the PDE residual loss and residual values.
+
+        Args:
+            features: Input features with gradients enabled.
+            predictions: Model reserve predictions.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Scalar PDE loss and pointwise residuals.
+
+        Scientific Context:
+            Automatic differentiation is used to compute ``dV/dt`` directly from
+            the network. The residual
+            ``f = dV/dt - rV - P + μ(S - V)`` is then forced toward zero.
+
+        Business Interpretation:
+            This is the consistency check that asks whether the network's reserve
+            forecast behaves like a real insurance reserve process.
+        """
         grads = torch.autograd.grad(
             outputs=predictions,
             inputs=features,

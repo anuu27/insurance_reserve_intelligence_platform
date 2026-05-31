@@ -1,4 +1,8 @@
-"""Logging utilities."""
+"""Logging utilities.
+
+Created: 2026-05-31
+Purpose: Configure structured logging for training, evaluation, and reporting workflows.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,20 @@ from pathlib import Path
 
 
 def configure_logger(name: str, log_file: str | None = None, level: int = logging.INFO) -> logging.Logger:
-    """Create a console and optional file logger."""
+    """Create a console and optional file logger.
+
+    Args:
+        name: Logger name.
+        log_file: Optional log-file path.
+        level: Logging verbosity level.
+
+    Returns:
+        logging.Logger: Configured logger instance.
+
+    Business Interpretation:
+        This supports auditability by persisting model-development events and
+        operational diagnostics.
+    """
 
     logger = logging.getLogger(name)
     logger.setLevel(level)

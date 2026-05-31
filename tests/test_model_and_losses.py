@@ -1,4 +1,8 @@
-"""Model and loss tests."""
+"""Model and loss tests.
+
+Created: 2026-05-31
+Purpose: Validate reserve model forward passes and composite loss behavior.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from src.utils.config import LossConfig, ModelConfig
 
 
 def test_model_forward_and_total_loss() -> None:
+    """Verify that the reserve model and composite loss produce valid tensor outputs."""
     model = ModelFactory.create_pinn(ModelConfig())
     features = torch.rand(8, 6, requires_grad=True)
     targets = torch.rand(8, 1)

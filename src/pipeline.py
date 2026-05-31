@@ -1,4 +1,8 @@
-"""End-to-end assembly helpers for scripts and tests."""
+"""End-to-end assembly helpers for scripts and tests.
+
+Created: 2026-05-31
+Purpose: Assemble the main research pipeline from config, simulation, solver, and model components.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,18 @@ from src.utils.config import ExperimentConfig
 
 
 def build_mortality_source(config: ExperimentConfig) -> MortalityDataSource | None:
-    """Build an offline mortality source when a sample CSV is available."""
+    """Build an offline mortality source when a sample CSV is available.
+
+    Args:
+        config: Experiment configuration.
+
+    Returns:
+        MortalityDataSource | None: Offline mortality loader when data is present.
+
+    Business Interpretation:
+        This keeps the platform usable in offline or air-gapped actuarial research
+        settings where external APIs are not available.
+    """
 
     candidate = Path(config.paths.data_dir) / "sample_mortality.csv"
     if candidate.exists():
@@ -23,7 +38,18 @@ def build_mortality_source(config: ExperimentConfig) -> MortalityDataSource | No
 
 
 def build_simulator(config: ExperimentConfig) -> PolicySimulator:
-    """Construct a policy simulator from configuration."""
+    """Construct a policy simulator from configuration.
+
+    Args:
+        config: Experiment configuration.
+
+    Returns:
+        PolicySimulator: Configured policy simulator.
+
+    Business Interpretation:
+        This defines the synthetic portfolio generator used for model development
+        and scenario experimentation.
+    """
 
     return PolicySimulator(
         age_range=(config.data.age_min, config.data.age_max),
@@ -39,7 +65,17 @@ def build_simulator(config: ExperimentConfig) -> PolicySimulator:
 
 
 def build_solver(config: ExperimentConfig) -> ThieleSolver:
-    """Construct the classical actuarial solver."""
+    """Construct the classical actuarial solver.
+
+    Args:
+        config: Experiment configuration.
+
+    Returns:
+        ThieleSolver: Configured actuarial solver.
+
+    Business Interpretation:
+        This wires the benchmark reserve engine used as the actuarial reference.
+    """
 
     return ThieleSolver(
         method=config.solver.method,
@@ -50,13 +86,35 @@ def build_solver(config: ExperimentConfig) -> ThieleSolver:
 
 
 def build_model(config: ExperimentConfig):
-    """Construct the configured reserve model."""
+    """Construct the configured reserve model.
+
+    Args:
+        config: Experiment configuration.
+
+    Returns:
+        BaseReserveModel: Configured reserve model instance.
+
+    Business Interpretation:
+        This is the fast surrogate reserve engine used after training.
+    """
 
     return ModelFactory.create_pinn(config.model)
 
 
 def build_datasets(config: ExperimentConfig) -> tuple[ReserveDataset, ReserveDataset, ReserveDataset, list]:
-    """Generate synthetic policies and datasets for training, validation, and testing."""
+    """Generate synthetic policies and datasets for training, validation, and testing.
+
+    Args:
+        config: Experiment configuration.
+
+    Returns:
+        tuple[ReserveDataset, ReserveDataset, ReserveDataset, list]: Train,
+        validation, and test datasets plus held-out policies.
+
+    Business Interpretation:
+        This builds the controlled experimental population used to teach and
+        validate the reserve surrogate.
+    """
 
     simulator = build_simulator(config)
     solver = build_solver(config)
@@ -70,7 +128,17 @@ def build_datasets(config: ExperimentConfig) -> tuple[ReserveDataset, ReserveDat
 
 
 def build_dataloaders(config: ExperimentConfig):
-    """Create train, validation, and test dataloaders."""
+    """Create train, validation, and test dataloaders.
+
+    Args:
+        config: Experiment configuration.
+
+    Returns:
+        tuple: Train, validation, and test dataloaders plus test artifacts.
+
+    Business Interpretation:
+        This is the final assembly point before training or evaluation starts.
+    """
 
     train_dataset, validation_dataset, test_dataset, test_policies = build_datasets(config)
     train_loader = create_dataloader(train_dataset, config.data.batch_size, shuffle=True, num_workers=config.data.num_workers)

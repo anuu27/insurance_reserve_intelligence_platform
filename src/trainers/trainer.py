@@ -1,4 +1,8 @@
-"""Training loop implementations."""
+"""Training loop implementations.
+
+Created: 2026-05-31
+Purpose: Train the reserve PINN with experiment logging, checkpointing, and governance controls.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +33,19 @@ from src.utils.logger import configure_logger
 
 @dataclass(slots=True)
 class EpochMetrics:
-    """Aggregate metrics for a training or validation epoch."""
+    """Aggregate metrics for a training or validation epoch.
+
+    Attributes:
+        total_loss: Weighted total loss.
+        data_loss: Supervised reserve-fitting loss.
+        pde_loss: PDE residual loss.
+        boundary_loss: Terminal boundary-condition loss.
+        regularization_loss: L2 regularization penalty.
+
+    Business Interpretation:
+        This summarizes whether the model is improving empirically, physically,
+        and numerically over an epoch.
+    """
 
     total_loss: float
     data_loss: float
@@ -39,17 +55,46 @@ class EpochMetrics:
 
 
 class BaseTrainer(ABC):
-    """Abstract model trainer."""
+    """Abstract model trainer.
+
+    Business Interpretation:
+        This is the common interface for training workflows so the platform can
+        standardize model-development runs.
+    """
 
     @abstractmethod
     def fit(self, train_loader: DataLoader, validation_loader: DataLoader) -> dict[str, list[float]]:
-        """Train a model and return history."""
+        """Train a model and return history.
+
+        Args:
+            train_loader: Training data loader.
+            validation_loader: Validation data loader.
+
+        Returns:
+            dict[str, list[float]]: Training history keyed by metric name.
+        """
 
 
 class PINNTrainer(BaseTrainer):
-    """Full-featured trainer for the reserve PINN."""
+    """Full-featured trainer for the reserve PINN.
+
+    Scientific Context:
+        The trainer optimizes a composite objective spanning supervised reserve
+        fit, PDE residual consistency, boundary enforcement, and regularization.
+
+    Business Interpretation:
+        This is the operational training engine that turns actuarial assumptions
+        and simulated portfolios into a deployable reserve surrogate.
+    """
 
     def __init__(self, model: nn.Module, config: ExperimentConfig, device_manager: DeviceManager | None = None) -> None:
+        """Initialize the PINN trainer.
+
+        Args:
+            model: Reserve model to optimize.
+            config: Experiment configuration.
+            device_manager: Optional device manager override.
+        """
         self.config = config
         self.device_manager = device_manager or DeviceManager(prefer_mixed_precision=config.trainer.mixed_precision)
         self.model = model.to(self.device_manager.device)
@@ -83,11 +128,25 @@ class PINNTrainer(BaseTrainer):
 
     @staticmethod
     def _create_writer(log_dir: str):
+        """Create a TensorBoard writer or fallback no-op writer.
+
+        Args:
+            log_dir: TensorBoard log directory.
+
+        Returns:
+            SummaryWriter | _NullSummaryWriter: Active metrics writer.
+        """
         if SummaryWriter is None:
             return _NullSummaryWriter()
         return SummaryWriter(log_dir=log_dir)
 
     def _initialize_csv_log(self) -> None:
+        """Initialize the CSV metrics log.
+
+        Business Interpretation:
+            This creates an auditable tabular record of training and validation
+            loss components for experiment review.
+        """
         self.csv_log_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.csv_log_path.exists():
             with self.csv_log_path.open("w", newline="", encoding="utf-8") as handle:
@@ -106,11 +165,26 @@ class PINNTrainer(BaseTrainer):
                 writer.writeheader()
 
     def _log_csv(self, epoch: int, split: str, metrics: EpochMetrics) -> None:
+        """Append one epoch record to the CSV metrics log.
+
+        Args:
+            epoch: Epoch index.
+            split: Data split name.
+            metrics: Epoch metrics to record.
+        """
         with self.csv_log_path.open("a", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=["epoch", "split", *asdict(metrics).keys()])
             writer.writerow({"epoch": epoch, "split": split, **asdict(metrics)})
 
     def _move_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """Move a batch to the configured device.
+
+        Args:
+            batch: Raw batch from the dataloader.
+
+        Returns:
+            dict[str, torch.Tensor]: Device-placed batch tensors.
+        """
         features = batch["features"].to(self.device_manager.device)
         return {
             "features": features.requires_grad_(True),
@@ -120,10 +194,29 @@ class PINNTrainer(BaseTrainer):
 
     @staticmethod
     def _empty_loss_breakdown(device: torch.device) -> LossBreakdown:
+        """Create a zero-valued loss breakdown.
+
+        Args:
+            device: Device on which the zero tensors should be allocated.
+
+        Returns:
+            LossBreakdown: Zero-valued loss structure.
+        """
         zero = torch.tensor(0.0, device=device)
         return LossBreakdown(total=zero, data=zero, pde=zero, boundary=zero, regularization=zero, residual=zero.unsqueeze(0))
 
     def _aggregate_epoch(self, loss_values: list[LossBreakdown]) -> EpochMetrics:
+        """Aggregate batch-level losses into epoch metrics.
+
+        Args:
+            loss_values: Batch-level loss breakdowns.
+
+        Returns:
+            EpochMetrics: Mean epoch metrics.
+
+        Raises:
+            ValueError: If no losses were collected.
+        """
         if not loss_values:
             raise ValueError("No losses collected for the epoch.")
         return EpochMetrics(
@@ -135,6 +228,15 @@ class PINNTrainer(BaseTrainer):
         )
 
     def _step(self, batch: dict[str, torch.Tensor], training: bool) -> LossBreakdown:
+        """Run one optimization or evaluation step.
+
+        Args:
+            batch: Input batch.
+            training: Whether gradients and optimizer updates should be applied.
+
+        Returns:
+            LossBreakdown: Loss values for the processed batch.
+        """
         prepared = self._move_batch(batch)
         if training:
             self.optimizer.zero_grad(set_to_none=True)
@@ -155,6 +257,15 @@ class PINNTrainer(BaseTrainer):
         return loss_breakdown
 
     def _run_epoch(self, loader: DataLoader, training: bool) -> EpochMetrics:
+        """Run one full training or validation epoch.
+
+        Args:
+            loader: Data loader for the epoch.
+            training: Whether this is a training epoch.
+
+        Returns:
+            EpochMetrics: Aggregated epoch metrics.
+        """
         self.model.train(mode=training)
         losses: list[LossBreakdown] = []
         for batch in loader:
@@ -162,6 +273,12 @@ class PINNTrainer(BaseTrainer):
         return self._aggregate_epoch(losses)
 
     def _save_checkpoint(self, epoch: int, validation_metrics: EpochMetrics) -> None:
+        """Persist model and optimizer state to disk.
+
+        Args:
+            epoch: Epoch number being saved.
+            validation_metrics: Validation metrics associated with the checkpoint.
+        """
         state: dict[str, Any] = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
@@ -177,7 +294,11 @@ class PINNTrainer(BaseTrainer):
             self.checkpoints.save("best_model.pt", state)
 
     def resume(self, checkpoint_path: str) -> None:
-        """Resume training from a checkpoint."""
+        """Resume training from a checkpoint.
+
+        Args:
+            checkpoint_path: Path to the checkpoint file.
+        """
 
         checkpoint = self.checkpoints.load(checkpoint_path, map_location=self.device_manager.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -189,7 +310,19 @@ class PINNTrainer(BaseTrainer):
         self.logger.info("Resumed from checkpoint %s at epoch %s", checkpoint_path, self.start_epoch)
 
     def fit(self, train_loader: DataLoader, validation_loader: DataLoader) -> dict[str, list[float]]:
-        """Train the model and return the loss history."""
+        """Train the model and return the loss history.
+
+        Args:
+            train_loader: Training data loader.
+            validation_loader: Validation data loader.
+
+        Returns:
+            dict[str, list[float]]: Recorded training history.
+
+        Business Interpretation:
+            This is the main training loop that produces a reserve model ready for
+            evaluation, stress testing, optimization, and digital twin usage.
+        """
 
         for epoch in range(self.start_epoch, self.config.trainer.epochs):
             train_metrics = self._run_epoch(train_loader, training=True)
@@ -231,13 +364,27 @@ class PINNTrainer(BaseTrainer):
 
 
 class _NullSummaryWriter:
-    """Fallback writer used when tensorboard is unavailable."""
+    """Fallback writer used when tensorboard is unavailable.
+
+    Business Interpretation:
+        This keeps training operational in minimal environments where TensorBoard
+        is not installed, without breaking the experiment pipeline.
+    """
 
     def add_scalar(self, tag: str, scalar_value: float, global_step: int) -> None:
+        """Ignore a scalar logging request.
+
+        Args:
+            tag: Metric tag.
+            scalar_value: Metric value.
+            global_step: Step or epoch index.
+        """
         del tag, scalar_value, global_step
 
     def flush(self) -> None:
+        """No-op flush for API compatibility."""
         return None
 
     def close(self) -> None:
+        """No-op close for API compatibility."""
         return None

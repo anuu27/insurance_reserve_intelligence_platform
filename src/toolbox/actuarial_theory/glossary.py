@@ -1,4 +1,8 @@
-"""Actuarial terminology dictionary."""
+"""Actuarial terminology dictionary.
+
+Created: 2026-05-31
+Purpose: Store core actuarial terms referenced by the platform and documentation.
+"""
 
 from __future__ import annotations
 

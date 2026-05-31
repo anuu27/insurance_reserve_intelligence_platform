@@ -1,4 +1,8 @@
-"""Actuarial solver tests."""
+"""Actuarial solver tests.
+
+Created: 2026-05-31
+Purpose: Validate numerical reserve-solver boundary behavior.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ from src.data.simulator import PolicySimulator
 
 
 def test_thiele_solver_returns_boundary_zero() -> None:
+    """Verify that the solved term-life reserve ends at the zero terminal boundary."""
     simulator = PolicySimulator(
         age_range=(30, 30),
         term_range=(10, 10),

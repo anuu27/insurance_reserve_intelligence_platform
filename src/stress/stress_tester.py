@@ -1,4 +1,8 @@
-"""Stress testing workflows."""
+"""Stress testing workflows.
+
+Created: 2026-05-31
+Purpose: Apply insurance and macro shocks to reserve predictions and export scenario outputs.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,20 @@ from src.visualization.stress_plots import plot_stress_comparison
 
 @dataclass(slots=True)
 class StressResult:
-    """Stress test output summary."""
+    """Stress test output summary.
+
+    Attributes:
+        policy_id: Policy identifier.
+        scenario_name: Name of the applied stress scenario.
+        before_reserve: Baseline reserve before the shock.
+        after_reserve: Reserve after the shock.
+        delta: Absolute reserve change.
+        delta_pct: Relative reserve change.
+
+    Business Interpretation:
+        This is the per-policy shock impact record used to explain which contracts
+        contribute most to adverse reserve movement.
+    """
 
     policy_id: str
     scenario_name: str
@@ -27,14 +44,40 @@ class StressResult:
 
 
 class StressTester:
-    """Apply actuarial and macro shocks to reserve predictions."""
+    """Apply actuarial and macro shocks to reserve predictions.
+
+    Scientific Context:
+        The stress tester perturbs key state variables such as mortality,
+        interest rate, premium persistence, and benefit size, then re-evaluates
+        the reserve model.
+
+    Business Interpretation:
+        This is the scenario engine used for risk review, capital planning, and
+        management what-if analysis.
+    """
 
     def __init__(self, model: torch.nn.Module, device: torch.device, config: StressScenarioConfig) -> None:
+        """Initialize the stress tester.
+
+        Args:
+            model: Trained reserve model.
+            device: Execution device for inference.
+            config: Stress scenario configuration.
+        """
         self.model = model.to(device)
         self.device = device
         self.config = config
 
     def _policy_features(self, policy: Policy, time_point: float = 0.0) -> torch.Tensor:
+        """Build a baseline feature tensor for one policy.
+
+        Args:
+            policy: Policy to transform.
+            time_point: Elapsed policy time for valuation.
+
+        Returns:
+            torch.Tensor: Single-row feature tensor.
+        """
         mortality = policy.mortality_profile.intensity_at(time_point)
         features = torch.tensor(
             [[time_point, float(policy.age), policy.interest_rate, policy.premium, policy.sum_assured, mortality]],
@@ -44,11 +87,35 @@ class StressTester:
         return features
 
     def _predict(self, features: torch.Tensor) -> float:
+        """Predict a scalar reserve value.
+
+        Args:
+            features: Feature tensor for model inference.
+
+        Returns:
+            float: Predicted reserve.
+        """
         self.model.eval()
         with torch.no_grad():
             return float(self.model(features).item())
 
     def _apply_shock(self, policy: Policy, scenario_name: str) -> torch.Tensor:
+        """Apply a named shock to a policy feature vector.
+
+        Args:
+            policy: Policy to stress.
+            scenario_name: Stress scenario identifier.
+
+        Returns:
+            torch.Tensor: Shocked feature tensor.
+
+        Raises:
+            ValueError: If the scenario name is unsupported.
+
+        Business Interpretation:
+            Each branch corresponds to a common actuarial or macro risk story such
+            as higher mortality, lower rates, inflation pressure, or worse lapse behavior.
+        """
         features = self._policy_features(policy)
         shocked = features.clone()
         if scenario_name == "mortality_shock":
@@ -67,7 +134,19 @@ class StressTester:
         return shocked
 
     def run_scenario(self, policies: list[Policy], scenario_name: str) -> pd.DataFrame:
-        """Run one stress scenario across a portfolio."""
+        """Run one stress scenario across a portfolio.
+
+        Args:
+            policies: Portfolio to stress.
+            scenario_name: Stress scenario identifier.
+
+        Returns:
+            pd.DataFrame: Policy-level before-and-after reserve comparison.
+
+        Business Interpretation:
+            This is the scenario result table used to assess reserve vulnerability
+            under a single adverse narrative.
+        """
 
         results: list[StressResult] = []
         for policy in policies:
@@ -91,7 +170,19 @@ class StressTester:
         return frame
 
     def run_all(self, policies: list[Policy], output_dir: str) -> dict[str, pd.DataFrame]:
-        """Run all configured scenarios, write CSVs, and generate plots."""
+        """Run all configured scenarios, write CSVs, and generate plots.
+
+        Args:
+            policies: Portfolio to stress.
+            output_dir: Directory used for CSV and plot exports.
+
+        Returns:
+            dict[str, pd.DataFrame]: Scenario result tables keyed by scenario name.
+
+        Business Interpretation:
+            This is the batch stress workflow for generating a compact risk pack of
+            reserve impacts across all standard scenarios.
+        """
 
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         outputs: dict[str, pd.DataFrame] = {}

@@ -1,4 +1,8 @@
-"""Optimization workflows for reserve management."""
+"""Optimization workflows for reserve management.
+
+Created: 2026-05-31
+Purpose: Optimize reserve-related assumptions and pricing decisions using the trained model.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +19,19 @@ from src.utils.config import OptimizationConfig
 
 @dataclass(slots=True)
 class OptimizationResult:
-    """Optimization summary."""
+    """Optimization summary.
+
+    Attributes:
+        variable_name: Decision variable being optimized.
+        optimal_value: Best decision value found.
+        objective_value: Objective value at the optimum.
+        method: Optimization routine used.
+        success: Whether the optimization run converged successfully.
+
+    Business Interpretation:
+        This object is the decision recommendation returned by the optimization
+        engine for pricing or reserve-targeting workflows.
+    """
 
     variable_name: str
     optimal_value: float
@@ -25,14 +41,38 @@ class OptimizationResult:
 
 
 class OptimizationEngine:
-    """Optimize premiums, interest rates, and reserve-related objectives."""
+    """Optimize premiums, interest rates, and reserve-related objectives.
+
+    Scientific Context:
+        The engine mixes gradient-based search and SciPy-based numerical
+        optimization on top of a differentiable reserve surrogate.
+
+    Business Interpretation:
+        It converts a reserve model into a decision-support tool for pricing,
+        target setting, and solvency-aware profitability analysis.
+    """
 
     def __init__(self, model: torch.nn.Module, device: torch.device, config: OptimizationConfig) -> None:
+        """Initialize the optimization engine.
+
+        Args:
+            model: Trained reserve model.
+            device: Execution device for optimization runs.
+            config: Optimization hyperparameters and constraints.
+        """
         self.model = model.to(device)
         self.device = device
         self.config = config
 
     def _features_from_policy(self, policy: Policy) -> torch.Tensor:
+        """Build an optimization feature tensor from a policy.
+
+        Args:
+            policy: Policy to convert.
+
+        Returns:
+            torch.Tensor: Single-row feature tensor.
+        """
         return torch.tensor(
             [[
                 0.0,
@@ -47,11 +87,35 @@ class OptimizationEngine:
         )
 
     def _predict(self, features: torch.Tensor) -> torch.Tensor:
+        """Predict reserves for optimization inputs.
+
+        Args:
+            features: Feature tensor for reserve inference.
+
+        Returns:
+            torch.Tensor: Model reserve prediction tensor.
+        """
         self.model.eval()
         return self.model(features)
 
     def target_reserve_optimization(self, policy: Policy, target_reserve: float) -> OptimizationResult:
-        """Find the interest rate that produces a target reserve."""
+        """Find the interest rate that produces a target reserve.
+
+        Args:
+            policy: Policy whose reserve target is being calibrated.
+            target_reserve: Desired reserve level.
+
+        Returns:
+            OptimizationResult: Optimization summary for the calibrated interest rate.
+
+        Scientific Context:
+            This is an inverse problem: solve for the assumption value that makes
+            the reserve surface hit a prescribed target.
+
+        Business Interpretation:
+            It answers the question, "What rate environment would justify this
+            liability level?"
+        """
 
         def objective(interest_rate: float) -> float:
             features = self._features_from_policy(policy).clone()
@@ -69,7 +133,18 @@ class OptimizationEngine:
         )
 
     def premium_optimization(self, policy: Policy) -> OptimizationResult:
-        """Use gradient ascent to maximize a simple profitability proxy."""
+        """Use gradient ascent to maximize a simple profitability proxy.
+
+        Args:
+            policy: Policy whose premium is being optimized.
+
+        Returns:
+            OptimizationResult: Optimization summary for the premium decision.
+
+        Business Interpretation:
+            This provides a research-grade pricing lever for exploring premium
+            adequacy while penalizing reserve intensity.
+        """
 
         premium = torch.tensor([policy.premium], dtype=torch.float32, device=self.device, requires_grad=True)
         optimizer = torch.optim.Adam([premium], lr=self.config.learning_rate)
@@ -96,7 +171,18 @@ class OptimizationEngine:
         )
 
     def constrained_premium_optimization(self, policy: Policy) -> OptimizationResult:
-        """Maximize profitability subject to a reserve floor."""
+        """Maximize profitability subject to a reserve floor.
+
+        Args:
+            policy: Policy whose premium is being optimized.
+
+        Returns:
+            OptimizationResult: Optimization summary under the solvency constraint.
+
+        Business Interpretation:
+            This approximates pricing under capital discipline by discouraging
+            solutions that breach a reserve-based solvency floor.
+        """
 
         def objective(values: np.ndarray) -> float:
             premium_value = float(values[0])
@@ -126,7 +212,19 @@ class OptimizationEngine:
         policy: Policy,
         optimizer_fn: Callable[[Callable[[float], float]], tuple[float, float]],
     ) -> OptimizationResult:
-        """Allow external Bayesian optimization libraries to plug in cleanly."""
+        """Allow external Bayesian optimization libraries to plug in cleanly.
+
+        Args:
+            policy: Policy whose premium is being optimized.
+            optimizer_fn: External optimizer callback returning the best point and objective.
+
+        Returns:
+            OptimizationResult: Optimization summary returned through the plugin hook.
+
+        Business Interpretation:
+            This keeps the architecture open for more advanced experimentation
+            without rewriting the core engine.
+        """
 
         def objective(premium_value: float) -> float:
             features = self._features_from_policy(policy).clone()

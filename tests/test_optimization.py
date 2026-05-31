@@ -1,4 +1,8 @@
-"""Optimization tests."""
+"""Optimization tests.
+
+Created: 2026-05-31
+Purpose: Validate optimization-engine output contracts.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from src.utils.device import DeviceManager
 
 
 def test_optimization_engine_returns_result_objects() -> None:
+    """Verify that target reserve optimization returns a populated result object."""
     config = ConfigLoader.load("configs/config.yaml")
     simulator = PolicySimulator(
         age_range=(35, 35),

@@ -1,4 +1,8 @@
-"""Configuration management utilities."""
+"""Configuration management utilities.
+
+Created: 2026-05-31
+Purpose: Define typed experiment configuration objects and YAML loading helpers.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,19 @@ T = TypeVar("T")
 
 
 def _coerce_dataclass(cls: Type[T], payload: Dict[str, Any]) -> T:
-    """Recursively coerce a dictionary into a dataclass instance."""
+    """Recursively coerce a dictionary into a dataclass instance.
+
+    Args:
+        cls: Target dataclass type.
+        payload: Raw dictionary payload.
+
+    Returns:
+        T: Instantiated dataclass of type ``cls``.
+
+    Business Interpretation:
+        This lets research and production settings be controlled from YAML rather
+        than hard-coded assumptions.
+    """
 
     type_hints = get_type_hints(cls)
     kwargs: Dict[str, Any] = {}
@@ -37,7 +53,17 @@ def _coerce_dataclass(cls: Type[T], payload: Dict[str, Any]) -> T:
 
 @dataclass(slots=True)
 class PathConfig:
-    """File-system configuration."""
+    """File-system configuration.
+
+    Attributes:
+        artifacts_dir: Root directory for generated outputs.
+        checkpoints_dir: Directory for model checkpoints.
+        logs_dir: Directory for logs and CSV metrics.
+        reports_dir: Directory for analytical reports.
+        plots_dir: Directory for exported plots.
+        tensorboard_dir: Directory for TensorBoard outputs.
+        data_dir: Directory for input data assets.
+    """
 
     artifacts_dir: str = "artifacts"
     checkpoints_dir: str = "artifacts/checkpoints"
@@ -50,7 +76,16 @@ class PathConfig:
 
 @dataclass(slots=True)
 class DataConfig:
-    """Synthetic and tabular data generation configuration."""
+    """Synthetic and tabular data generation configuration.
+
+    Scientific Context:
+        This configuration defines the synthetic portfolio sampling space and the
+        granularity of reserve trajectories.
+
+    Business Interpretation:
+        These settings describe the training portfolio universe and how broad or
+        narrow the modeled insurance book should be.
+    """
 
     train_size: int = 512
     validation_size: int = 128
@@ -75,7 +110,11 @@ class DataConfig:
 
 @dataclass(slots=True)
 class SolverConfig:
-    """Actuarial solver configuration."""
+    """Actuarial solver configuration.
+
+    Business Interpretation:
+        These settings govern how the benchmark actuarial reserve engine is run.
+    """
 
     method: str = "solve_ivp"
     integration_step: float = 0.25
@@ -85,7 +124,12 @@ class SolverConfig:
 
 @dataclass(slots=True)
 class ModelConfig:
-    """PINN model configuration."""
+    """PINN model configuration.
+
+    Business Interpretation:
+        These settings control the complexity of the reserve surrogate used for
+        inference, sensitivities, and digital twin simulation.
+    """
 
     input_dim: int = 6
     hidden_dim: int = 128
@@ -96,7 +140,12 @@ class ModelConfig:
 
 @dataclass(slots=True)
 class LossConfig:
-    """Loss term weights and regularization settings."""
+    """Loss term weights and regularization settings.
+
+    Business Interpretation:
+        These values define how strongly the model should prioritize empirical fit
+        versus actuarial consistency.
+    """
 
     lambda_data: float = 1.0
     lambda_pde: float = 1.0
@@ -106,7 +155,12 @@ class LossConfig:
 
 @dataclass(slots=True)
 class TrainerConfig:
-    """Training loop configuration."""
+    """Training loop configuration.
+
+    Business Interpretation:
+        These settings control learning stability, checkpoint cadence, and
+        operational training behavior.
+    """
 
     epochs: int = 100
     learning_rate: float = 1e-3
@@ -122,7 +176,12 @@ class TrainerConfig:
 
 @dataclass(slots=True)
 class StressScenarioConfig:
-    """Default shock amplitudes used by the stress tester."""
+    """Default shock amplitudes used by the stress tester.
+
+    Business Interpretation:
+        These are the platform's default adverse assumptions used for scenario and
+        capital-sensitivity analysis.
+    """
 
     mortality_shock: float = 0.15
     interest_rate_shock: float = -0.01
@@ -133,7 +192,12 @@ class StressScenarioConfig:
 
 @dataclass(slots=True)
 class OptimizationConfig:
-    """Optimization defaults."""
+    """Optimization defaults.
+
+    Business Interpretation:
+        These settings govern decision-search workflows such as premium or target
+        reserve optimization.
+    """
 
     learning_rate: float = 0.05
     steps: int = 150
@@ -143,7 +207,12 @@ class OptimizationConfig:
 
 @dataclass(slots=True)
 class DigitalTwinConfig:
-    """Digital twin simulation configuration."""
+    """Digital twin simulation configuration.
+
+    Business Interpretation:
+        These settings define the time horizon and standard scenario catalogue for
+        the liability digital twin.
+    """
 
     forecast_horizon: int = 30
     scenario_steps: int = 12
@@ -154,7 +223,26 @@ class DigitalTwinConfig:
 
 @dataclass(slots=True)
 class ExperimentConfig:
-    """Top-level platform configuration."""
+    """Top-level platform configuration.
+
+    Attributes:
+        project_name: Human-readable project identifier.
+        experiment_name: Named experiment configuration.
+        seed: Global random seed.
+        paths: File-system paths.
+        data: Data-generation settings.
+        solver: Actuarial solver settings.
+        model: Neural model settings.
+        losses: Loss-weight settings.
+        trainer: Training-loop settings.
+        stress: Stress-scenario settings.
+        optimization: Optimization settings.
+        digital_twin: Digital twin settings.
+
+    Business Interpretation:
+        This object is the contract that ties together actuarial assumptions,
+        machine-learning settings, and operational outputs for one experiment.
+    """
 
     project_name: str = "src"
     experiment_name: str = "actuary_twin_pinn"
@@ -171,11 +259,23 @@ class ExperimentConfig:
 
 
 class ConfigLoader:
-    """Load YAML configuration into typed dataclasses."""
+    """Load YAML configuration into typed dataclasses.
+
+    Business Interpretation:
+        This provides a controlled, auditable path from analyst-edited YAML into
+        the executable research environment.
+    """
 
     @staticmethod
     def load(path: str | Path) -> ExperimentConfig:
-        """Load configuration from a YAML file."""
+        """Load configuration from a YAML file.
+
+        Args:
+            path: YAML configuration file path.
+
+        Returns:
+            ExperimentConfig: Typed configuration object.
+        """
 
         config_path = Path(path)
         with config_path.open("r", encoding="utf-8") as handle:
@@ -184,7 +284,15 @@ class ConfigLoader:
 
 
 def ensure_directories(config: ExperimentConfig) -> None:
-    """Create artifact directories required by the workflow."""
+    """Create artifact directories required by the workflow.
+
+    Args:
+        config: Experiment configuration containing path definitions.
+
+    Business Interpretation:
+        This ensures reporting, checkpointing, and governance artifacts have a
+        stable place to be written during model development.
+    """
 
     for item in fields(config.paths):
         Path(getattr(config.paths, item.name)).mkdir(parents=True, exist_ok=True)

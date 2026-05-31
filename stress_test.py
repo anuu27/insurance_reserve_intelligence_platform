@@ -1,4 +1,8 @@
-"""Run stress testing for the ActuaryTwin platform."""
+"""Run stress testing for the ActuaryTwin platform.
+
+Created: 2026-05-31
+Purpose: Execute standard reserve stress scenarios and export reports.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,12 @@ from src.utils.seed import set_seed
 
 
 def main() -> None:
+    """Run the stress-testing entrypoint.
+
+    Business Interpretation:
+        This script produces a reusable reserve stress pack for actuarial and risk
+        review workflows.
+    """
     config = ConfigLoader.load(Path("configs/config.yaml"))
     ensure_directories(config)
     set_seed(config.seed)

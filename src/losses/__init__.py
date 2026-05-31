@@ -1,1 +1,5 @@
-"""Loss functions for PINN training."""
+"""Loss functions for PINN training.
+
+Created: 2026-05-31
+Purpose: Group supervised, physics, boundary, and regularization loss modules.
+"""
