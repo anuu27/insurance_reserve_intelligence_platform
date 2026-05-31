@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from insurance_reserve_intelligence_platform.actuarial.policy import MortalityProfile
+from src.actuarial.policy import MortalityProfile
 
 
 class MortalityDataSource(ABC):

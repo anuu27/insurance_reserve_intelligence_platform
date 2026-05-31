@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from insurance_reserve_intelligence_platform.digital_twin.engine import DigitalTwinEngine
-from insurance_reserve_intelligence_platform.pipeline import build_model
-from insurance_reserve_intelligence_platform.utils.config import ConfigLoader
-from insurance_reserve_intelligence_platform.utils.device import DeviceManager
-from insurance_reserve_intelligence_platform.data.simulator import PolicySimulator
+from src.digital_twin.engine import DigitalTwinEngine
+from src.pipeline import build_model
+from src.utils.config import ConfigLoader
+from src.utils.device import DeviceManager
+from src.data.simulator import PolicySimulator
 
 
 def test_digital_twin_forecast_has_rows() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from insurance_reserve_intelligence_platform.data.simulator import PolicySimulator
+from src.data.simulator import PolicySimulator
 
 
 def test_policy_simulator_generates_requested_count() -> None:

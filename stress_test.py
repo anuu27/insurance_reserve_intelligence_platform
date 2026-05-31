@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from insurance_reserve_intelligence_platform.pipeline import build_dataloaders, build_model
-from insurance_reserve_intelligence_platform.stress.stress_tester import StressTester
-from insurance_reserve_intelligence_platform.utils.checkpoint import CheckpointManager
-from insurance_reserve_intelligence_platform.utils.config import ConfigLoader, ensure_directories
-from insurance_reserve_intelligence_platform.utils.device import DeviceManager
-from insurance_reserve_intelligence_platform.utils.seed import set_seed
+from src.pipeline import build_dataloaders, build_model
+from src.stress.stress_tester import StressTester
+from src.utils.checkpoint import CheckpointManager
+from src.utils.config import ConfigLoader, ensure_directories
+from src.utils.device import DeviceManager
+from src.utils.seed import set_seed
 
 
 def main() -> None:

@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from insurance_reserve_intelligence_platform.visualization.sensitivity_plots import plot_sensitivities
+from src.visualization.sensitivity_plots import plot_sensitivities
 
 
 @dataclass(slots=True)

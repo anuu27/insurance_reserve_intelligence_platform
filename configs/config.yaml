@@ -1,4 +1,4 @@
-project_name: insurance_reserve_intelligence_platform
+project_name: src
 experiment_name: actuary_twin_term_life_pinn
 seed: 42
 

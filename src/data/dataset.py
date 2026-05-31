@@ -9,8 +9,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from insurance_reserve_intelligence_platform.actuarial.actuarial_solver import BaseActuarialSolver
-from insurance_reserve_intelligence_platform.actuarial.policy import Policy
+from src.actuarial.actuarial_solver import BaseActuarialSolver
+from src.actuarial.policy import Policy
 
 
 @dataclass(slots=True)

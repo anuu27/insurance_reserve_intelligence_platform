@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from insurance_reserve_intelligence_platform.actuarial.actuarial_solver import ThieleSolver
-from insurance_reserve_intelligence_platform.data.dataloader import create_dataloader
-from insurance_reserve_intelligence_platform.data.dataset import ReserveDataset
-from insurance_reserve_intelligence_platform.data.mortality_loader import CSVMortalityLoader, MortalityDataSource
-from insurance_reserve_intelligence_platform.data.simulator import PolicySimulator
-from insurance_reserve_intelligence_platform.models.factory import ModelFactory
-from insurance_reserve_intelligence_platform.utils.config import ExperimentConfig
+from src.actuarial.actuarial_solver import ThieleSolver
+from src.data.dataloader import create_dataloader
+from src.data.dataset import ReserveDataset
+from src.data.mortality_loader import CSVMortalityLoader, MortalityDataSource
+from src.data.simulator import PolicySimulator
+from src.models.factory import ModelFactory
+from src.utils.config import ExperimentConfig
 
 
 def build_mortality_source(config: ExperimentConfig) -> MortalityDataSource | None:

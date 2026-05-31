@@ -20,11 +20,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - environment dependent
     SummaryWriter = None  # type: ignore[assignment]
 
-from insurance_reserve_intelligence_platform.losses.total_loss import LossBreakdown, TotalLoss
-from insurance_reserve_intelligence_platform.utils.checkpoint import CheckpointManager
-from insurance_reserve_intelligence_platform.utils.config import ExperimentConfig
-from insurance_reserve_intelligence_platform.utils.device import DeviceManager
-from insurance_reserve_intelligence_platform.utils.logger import configure_logger
+from src.losses.total_loss import LossBreakdown, TotalLoss
+from src.utils.checkpoint import CheckpointManager
+from src.utils.config import ExperimentConfig
+from src.utils.device import DeviceManager
+from src.utils.logger import configure_logger
 
 
 @dataclass(slots=True)

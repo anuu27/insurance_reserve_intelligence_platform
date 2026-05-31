@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from insurance_reserve_intelligence_platform.models.base_model import BaseReserveModel
-from insurance_reserve_intelligence_platform.models.mlp import MLP
+from src.models.base_model import BaseReserveModel
+from src.models.mlp import MLP
 
 
 class PINNReserveModel(BaseReserveModel):

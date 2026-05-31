@@ -8,9 +8,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from insurance_reserve_intelligence_platform.actuarial.policy import Policy
-from insurance_reserve_intelligence_platform.data.simulator import PolicySimulator, ScenarioDefinition
-from insurance_reserve_intelligence_platform.utils.config import DigitalTwinConfig
+from src.actuarial.policy import Policy
+from src.data.simulator import PolicySimulator, ScenarioDefinition
+from src.utils.config import DigitalTwinConfig
 
 
 @dataclass(slots=True)

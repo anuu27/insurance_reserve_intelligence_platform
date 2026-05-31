@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from insurance_reserve_intelligence_platform.actuarial.policy import Policy
+from src.actuarial.policy import Policy
 
 
 @dataclass(slots=True)

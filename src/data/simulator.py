@@ -7,8 +7,8 @@ from typing import Iterable
 
 import numpy as np
 
-from insurance_reserve_intelligence_platform.actuarial.policy import MortalityProfile, Policy
-from insurance_reserve_intelligence_platform.data.mortality_loader import MortalityDataSource
+from src.actuarial.policy import MortalityProfile, Policy
+from src.data.mortality_loader import MortalityDataSource
 
 
 @dataclass(slots=True)

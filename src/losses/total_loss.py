@@ -7,11 +7,11 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from insurance_reserve_intelligence_platform.losses.boundary_loss import BoundaryLoss
-from insurance_reserve_intelligence_platform.losses.data_loss import DataLoss
-from insurance_reserve_intelligence_platform.losses.pde_loss import PDELoss
-from insurance_reserve_intelligence_platform.losses.regularization_loss import RegularizationLoss
-from insurance_reserve_intelligence_platform.utils.config import LossConfig
+from src.losses.boundary_loss import BoundaryLoss
+from src.losses.data_loss import DataLoss
+from src.losses.pde_loss import PDELoss
+from src.losses.regularization_loss import RegularizationLoss
+from src.utils.config import LossConfig
 
 
 @dataclass(slots=True)

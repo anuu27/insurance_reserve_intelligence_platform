@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from insurance_reserve_intelligence_platform.models.base_model import BaseReserveModel
-from insurance_reserve_intelligence_platform.models.pinn import PINNReserveModel
-from insurance_reserve_intelligence_platform.utils.config import ModelConfig
+from src.models.base_model import BaseReserveModel
+from src.models.pinn import PINNReserveModel
+from src.utils.config import ModelConfig
 
 
 class ModelFactory:

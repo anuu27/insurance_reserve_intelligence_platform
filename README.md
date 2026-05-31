@@ -1,4 +1,4 @@
-# insurance_reserve_intelligence_platform
+# src
 
 ActuaryTwin is a production-oriented research platform for building an insurance liability digital twin using Physics-Informed Neural Networks (PINNs). The system combines a classical actuarial solver with a PyTorch PINN so liability reserves can be estimated, stressed, optimized, and simulated under business and macroeconomic scenarios.
 
@@ -45,11 +45,11 @@ flowchart LR
 ## Repository Structure
 
 ```text
-insurance_reserve_intelligence_platform/
+src/
 ├── configs/
 ├── data/
 ├── docs/
-├── insurance_reserve_intelligence_platform/
+├── src/
 │   ├── actuarial/
 │   ├── data/
 │   ├── digital_twin/
@@ -147,7 +147,7 @@ The `DigitalTwinEngine` supports:
 Example usage:
 
 ```python
-from insurance_reserve_intelligence_platform.digital_twin.engine import DigitalTwinEngine
+from src.digital_twin.engine import DigitalTwinEngine
 ```
 
 ## Example Outputs

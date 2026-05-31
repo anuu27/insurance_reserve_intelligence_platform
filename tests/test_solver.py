@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from insurance_reserve_intelligence_platform.actuarial.actuarial_solver import ThieleSolver
-from insurance_reserve_intelligence_platform.data.simulator import PolicySimulator
+from src.actuarial.actuarial_solver import ThieleSolver
+from src.data.simulator import PolicySimulator
 
 
 def test_thiele_solver_returns_boundary_zero() -> None:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from insurance_reserve_intelligence_platform.data.simulator import PolicySimulator
-from insurance_reserve_intelligence_platform.optimization.optimizer_engine import OptimizationEngine
-from insurance_reserve_intelligence_platform.pipeline import build_model
-from insurance_reserve_intelligence_platform.utils.config import ConfigLoader
-from insurance_reserve_intelligence_platform.utils.device import DeviceManager
+from src.data.simulator import PolicySimulator
+from src.optimization.optimizer_engine import OptimizationEngine
+from src.pipeline import build_model
+from src.utils.config import ConfigLoader
+from src.utils.device import DeviceManager
 
 
 def test_optimization_engine_returns_result_objects() -> None:

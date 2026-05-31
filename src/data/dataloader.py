@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from torch.utils.data import DataLoader
 
-from insurance_reserve_intelligence_platform.data.dataset import ReserveDataset
+from src.data.dataset import ReserveDataset
 
 
 def create_dataloader(

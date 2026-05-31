@@ -9,8 +9,8 @@ import numpy as np
 import torch
 from scipy.optimize import minimize, minimize_scalar
 
-from insurance_reserve_intelligence_platform.actuarial.policy import Policy
-from insurance_reserve_intelligence_platform.utils.config import OptimizationConfig
+from src.actuarial.policy import Policy
+from src.utils.config import OptimizationConfig
 
 
 @dataclass(slots=True)

@@ -156,7 +156,7 @@ class DigitalTwinConfig:
 class ExperimentConfig:
     """Top-level platform configuration."""
 
-    project_name: str = "insurance_reserve_intelligence_platform"
+    project_name: str = "src"
     experiment_name: str = "actuary_twin_pinn"
     seed: int = 42
     paths: PathConfig = field(default_factory=PathConfig)

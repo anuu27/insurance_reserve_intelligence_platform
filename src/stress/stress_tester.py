@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from insurance_reserve_intelligence_platform.actuarial.policy import Policy
-from insurance_reserve_intelligence_platform.utils.config import StressScenarioConfig
-from insurance_reserve_intelligence_platform.visualization.stress_plots import plot_stress_comparison
+from src.actuarial.policy import Policy
+from src.utils.config import StressScenarioConfig
+from src.visualization.stress_plots import plot_stress_comparison
 
 
 @dataclass(slots=True)
