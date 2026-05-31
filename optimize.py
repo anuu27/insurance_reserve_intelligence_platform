@@ -1,0 +1,39 @@
+"""Run optimization workflows for the ActuaryTwin platform."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from insurance_reserve_intelligence_platform.optimization.optimizer_engine import OptimizationEngine
+from insurance_reserve_intelligence_platform.pipeline import build_dataloaders, build_model
+from insurance_reserve_intelligence_platform.utils.checkpoint import CheckpointManager
+from insurance_reserve_intelligence_platform.utils.config import ConfigLoader, ensure_directories
+from insurance_reserve_intelligence_platform.utils.device import DeviceManager
+from insurance_reserve_intelligence_platform.utils.seed import set_seed
+
+
+def main() -> None:
+    config = ConfigLoader.load(Path("configs/config.yaml"))
+    ensure_directories(config)
+    set_seed(config.seed)
+
+    _, _, _, _, test_policies = build_dataloaders(config)
+    device_manager = DeviceManager(prefer_mixed_precision=False)
+    model = build_model(config)
+    checkpoint_path = Path(config.paths.checkpoints_dir) / "best_model.pt"
+    if checkpoint_path.exists():
+        checkpoint = CheckpointManager(config.paths.checkpoints_dir).load(checkpoint_path, map_location=device_manager.device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+    engine = OptimizationEngine(model=model, device=device_manager.device, config=config.optimization)
+    policy = test_policies[0]
+    reserve_result = engine.target_reserve_optimization(policy, target_reserve=50_000.0)
+    premium_result = engine.premium_optimization(policy)
+    constrained_result = engine.constrained_premium_optimization(policy)
+    print(reserve_result)
+    print(premium_result)
+    print(constrained_result)
+
+
+if __name__ == "__main__":
+    main()
