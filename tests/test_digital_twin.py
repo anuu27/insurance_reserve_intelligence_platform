@@ -19,7 +19,6 @@ def test_digital_twin_forecast_has_rows() -> None:
     simulator = PolicySimulator(
         age_range=(40, 40),
         term_range=(10, 10),
-        premium_range=(1000.0, 1000.0),
         interest_rate_range=(0.03, 0.03),
         sum_assured_range=(100000.0, 100000.0),
         seed=3,

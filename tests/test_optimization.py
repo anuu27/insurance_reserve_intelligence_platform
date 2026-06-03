@@ -19,7 +19,6 @@ def test_optimization_engine_returns_result_objects() -> None:
     simulator = PolicySimulator(
         age_range=(35, 35),
         term_range=(15, 15),
-        premium_range=(1200.0, 1200.0),
         interest_rate_range=(0.04, 0.04),
         sum_assured_range=(150000.0, 150000.0),
         seed=11,

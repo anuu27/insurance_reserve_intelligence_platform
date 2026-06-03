@@ -100,14 +100,17 @@ class DataConfig:
     age_max: int = 70
     term_min: int = 5
     term_max: int = 30
-    premium_min: float = 500.0
-    premium_max: float = 5000.0
     interest_rate_min: float = 0.01
     interest_rate_max: float = 0.08
     sum_assured_min: float = 50_000.0
     sum_assured_max: float = 1_000_000.0
     mortality_scale: float = 0.0005
     mortality_shape: float = 1.08
+    mortality_reference_age: int = 25
+    premium_loading: float = 1.10
+    max_expiry_age: int = 80
+    sum_assured_rounding: float = 50_000.0
+    sum_assured_age_decay: float = 0.02
     random_seed: int = 42
 
 

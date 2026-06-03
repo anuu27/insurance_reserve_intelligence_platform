@@ -97,6 +97,14 @@ class ReserveDataset(Dataset[dict[str, torch.Tensor]]):
         """
         record = self.records[index]
         features = torch.tensor(record.features, dtype=torch.float32)
+
+                # Feature normalization
+        features[0] /= 30.0        # time
+        features[1] /= 100.0       # age
+        features[2] /= 0.1         # interest rate
+        features[3] /= 10000.0     # premium
+        features[4] /= 1000000.0   # sum assured
+        features[5] /= 0.05        # mortality
         return {
             "features": features,
             "target": torch.tensor([record.reserve], dtype=torch.float32),
