@@ -9,6 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
+import pandas as pd
+
+from src.actuarial.actuarial_solver import ThieleSolver
+from src.visualization.reserve_plots import plot_reserve_trajectory
 
 from src.evaluators.evaluator import ReserveEvaluator
 from src.pipeline import build_dataloaders, build_model
@@ -29,7 +33,7 @@ def main() -> None:
     ensure_directories(config)
     set_seed(config.seed)
 
-    _, _, test_loader, test_dataset, _ = build_dataloaders(config)
+    _, _, test_loader, test_dataset, test_policies = build_dataloaders(config)
     device_manager = DeviceManager(preferred_device=config.trainer.device, prefer_mixed_precision=False)
     model = build_model(config)
 
@@ -45,10 +49,51 @@ def main() -> None:
         f"MSE={result.mse:.6f} MAE={result.mae:.6f} RMSE={result.rmse:.6f} R2={result.r2:.6f}"
     )
 
-    sample_features = torch.stack([test_dataset[0]["features"], test_dataset[1]["features"]])
+    sample_features = torch.stack(
+        [test_dataset[i]["features"] for i in range(100)]
+)
     output_csv = Path(config.paths.reports_dir) / "sensitivity_report.csv"
     evaluator.generate_sensitivity_report(sample_features, str(output_csv))
     print(f"Sensitivity report written to {output_csv}")
+
+    # ==========================================
+    # Reserve Trajectory Plot
+    # ==========================================
+    print(type(test_policies))
+    print(type(test_policies[0]))
+    print(test_policies[0])
+    policy = test_policies[0]  # Using the first test policy for trajectory plotting
+
+    solver = ThieleSolver(
+        method=config.solver.method,
+        integration_step=config.solver.integration_step,
+        rtol=config.solver.rtol,
+        atol=config.solver.atol,
+    )
+
+    trajectory = solver.solve(
+        policy=policy,
+        num_steps=config.data.time_steps,
+    )
+
+    trajectory_df = pd.DataFrame(
+        {
+            "time": trajectory.times,
+            "reserve": trajectory.reserves,
+        }
+    )
+
+    reserve_plot_path = (
+        Path(config.paths.reports_dir)
+        / "reserve_trajectory.png"
+    )
+
+    plot_reserve_trajectory(
+        trajectory_df,
+        str(reserve_plot_path),
+    )
+
+    print(f"Reserve plot written to {reserve_plot_path}")
 
 
 if __name__ == "__main__":

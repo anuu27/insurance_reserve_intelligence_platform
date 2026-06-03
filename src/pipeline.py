@@ -54,12 +54,16 @@ def build_simulator(config: ExperimentConfig) -> PolicySimulator:
     return PolicySimulator(
         age_range=(config.data.age_min, config.data.age_max),
         term_range=(config.data.term_min, config.data.term_max),
-        premium_range=(config.data.premium_min, config.data.premium_max),
         interest_rate_range=(config.data.interest_rate_min, config.data.interest_rate_max),
         sum_assured_range=(config.data.sum_assured_min, config.data.sum_assured_max),
         mortality_source=build_mortality_source(config),
         mortality_scale=config.data.mortality_scale,
         mortality_shape=config.data.mortality_shape,
+        mortality_reference_age=config.data.mortality_reference_age,
+        premium_loading=config.data.premium_loading,
+        max_expiry_age=config.data.max_expiry_age,
+        sum_assured_rounding=config.data.sum_assured_rounding,
+        sum_assured_age_decay=config.data.sum_assured_age_decay,
         seed=config.data.random_seed,
     )
 
@@ -101,7 +105,9 @@ def build_model(config: ExperimentConfig):
     return ModelFactory.create_pinn(config.model)
 
 
-def build_datasets(config: ExperimentConfig) -> tuple[ReserveDataset, ReserveDataset, ReserveDataset, list]:
+def build_datasets(
+    config: ExperimentConfig,
+) -> tuple[ReserveDataset, ReserveDataset, ReserveDataset, list]:
     """Generate synthetic policies and datasets for training, validation, and testing.
 
     Args:
@@ -141,7 +147,22 @@ def build_dataloaders(config: ExperimentConfig):
     """
 
     train_dataset, validation_dataset, test_dataset, test_policies = build_datasets(config)
-    train_loader = create_dataloader(train_dataset, config.data.batch_size, shuffle=True, num_workers=config.data.num_workers)
-    validation_loader = create_dataloader(validation_dataset, config.data.batch_size, shuffle=False, num_workers=config.data.num_workers)
-    test_loader = create_dataloader(test_dataset, config.data.batch_size, shuffle=False, num_workers=config.data.num_workers)
+    train_loader = create_dataloader(
+        train_dataset,
+        config.data.batch_size,
+        shuffle=True,
+        num_workers=config.data.num_workers,
+    )
+    validation_loader = create_dataloader(
+        validation_dataset,
+        config.data.batch_size,
+        shuffle=False,
+        num_workers=config.data.num_workers,
+    )
+    test_loader = create_dataloader(
+        test_dataset,
+        config.data.batch_size,
+        shuffle=False,
+        num_workers=config.data.num_workers,
+    )
     return train_loader, validation_loader, test_loader, test_dataset, test_policies
