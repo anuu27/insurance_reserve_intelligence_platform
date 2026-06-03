@@ -24,7 +24,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - environment dependent
     SummaryWriter = None  # type: ignore[assignment]
 
-from src.losses.total_loss import LossBreakdown, TotalLoss
+from src.losses.total_loss import TotalLoss
 from src.utils.checkpoint import CheckpointManager
 from src.utils.config import ExperimentConfig
 from src.utils.device import DeviceManager
@@ -37,10 +37,8 @@ class EpochMetrics:
 
     Attributes:
         total_loss: Weighted total loss.
-        data_loss: Supervised reserve-fitting loss.
-        pde_loss: PDE residual loss.
-        boundary_loss: Terminal boundary-condition loss.
-        regularization_loss: L2 regularization penalty.
+        components: Mean raw value for each active configured loss term.
+        weighted_components: Mean weighted contribution for each active loss term.
 
     Business Interpretation:
         This summarizes whether the model is improving empirically, physically,
@@ -48,10 +46,20 @@ class EpochMetrics:
     """
 
     total_loss: float
-    data_loss: float
-    pde_loss: float
-    boundary_loss: float
-    regularization_loss: float
+    components: dict[str, float]
+    weighted_components: dict[str, float]
+
+    def to_csv_row(self) -> dict[str, float]:
+        """Serialize metrics to a flat CSV row.
+
+        Returns:
+            dict[str, float]: Flattened metric dictionary.
+        """
+
+        row: dict[str, float] = {"total_loss": self.total_loss}
+        row.update({f"raw_{name}": value for name, value in self.components.items()})
+        row.update({f"weighted_{name}": value for name, value in self.weighted_components.items()})
+        return row
 
 
 class BaseTrainer(ABC):
@@ -80,7 +88,8 @@ class PINNTrainer(BaseTrainer):
 
     Scientific Context:
         The trainer optimizes a composite objective spanning supervised reserve
-        fit, PDE residual consistency, boundary enforcement, and regularization.
+        fit, PDE residual consistency, boundary enforcement, and optional
+        knowledge-informed actuarial constraints.
 
     Business Interpretation:
         This is the operational training engine that turns actuarial assumptions
@@ -101,7 +110,7 @@ class PINNTrainer(BaseTrainer):
             prefer_mixed_precision=config.trainer.mixed_precision,
         )
         self.model = self.device_manager.move_module(model)
-        self.loss_fn = TotalLoss(config.losses)
+        self.loss_fn = TotalLoss(config.losses, settings=config.loss_settings)
         self.optimizer = Adam(
             self.model.parameters(),
             lr=config.trainer.learning_rate,
@@ -128,7 +137,13 @@ class PINNTrainer(BaseTrainer):
         self.best_validation_loss = float("inf")
         self.epochs_without_improvement = 0
         self.start_epoch = 0
+        self.active_loss_names = self.loss_fn.active_loss_names
         self.history: dict[str, list[float]] = {"train_total_loss": [], "validation_total_loss": []}
+        for name in self.active_loss_names:
+            self.history[f"train_raw_{name}"] = []
+            self.history[f"validation_raw_{name}"] = []
+            self.history[f"train_weighted_{name}"] = []
+            self.history[f"validation_weighted_{name}"] = []
         self._initialize_csv_log()
         self._log_runtime_summary()
         if config.trainer.resume_from:
@@ -162,6 +177,7 @@ class PINNTrainer(BaseTrainer):
         self.writer.add_text("run/name", self.config.trainer.run_name, 0)
         self.writer.add_text("run/device", self.device_manager.summary(), 0)
         self.writer.add_text("run/artifacts_dir", self.config.paths.run_dir, 0)
+        self.writer.add_text("run/active_losses", ", ".join(self.active_loss_names) or "none", 0)
 
     def _initialize_csv_log(self) -> None:
         """Initialize the CSV metrics log.
@@ -179,10 +195,8 @@ class PINNTrainer(BaseTrainer):
                         "epoch",
                         "split",
                         "total_loss",
-                        "data_loss",
-                        "pde_loss",
-                        "boundary_loss",
-                        "regularization_loss",
+                        *[f"raw_{name}" for name in self.active_loss_names],
+                        *[f"weighted_{name}" for name in self.active_loss_names],
                     ],
                 )
                 writer.writeheader()
@@ -196,8 +210,9 @@ class PINNTrainer(BaseTrainer):
             metrics: Epoch metrics to record.
         """
         with self.csv_log_path.open("a", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["epoch", "split", *asdict(metrics).keys()])
-            writer.writerow({"epoch": epoch, "split": split, **asdict(metrics)})
+            row = metrics.to_csv_row()
+            writer = csv.DictWriter(handle, fieldnames=["epoch", "split", *row.keys()])
+            writer.writerow({"epoch": epoch, "split": split, **row})
 
     def _move_batch(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Move a batch to the configured device.
@@ -211,24 +226,12 @@ class PINNTrainer(BaseTrainer):
         features = batch["features"].to(self.device_manager.device)
         return {
             "features": features.requires_grad_(True),
+            "raw_features": batch["raw_features"].to(self.device_manager.device),
             "target": batch["target"].to(self.device_manager.device),
             "term": batch["term"].to(self.device_manager.device),
         }
 
-    @staticmethod
-    def _empty_loss_breakdown(device: torch.device) -> LossBreakdown:
-        """Create a zero-valued loss breakdown.
-
-        Args:
-            device: Device on which the zero tensors should be allocated.
-
-        Returns:
-            LossBreakdown: Zero-valued loss structure.
-        """
-        zero = torch.tensor(0.0, device=device)
-        return LossBreakdown(total=zero, data=zero, pde=zero, boundary=zero, regularization=zero, residual=zero.unsqueeze(0))
-
-    def _aggregate_epoch(self, loss_values: list[LossBreakdown]) -> EpochMetrics:
+    def _aggregate_epoch(self, loss_values: list[dict[str, Any]]) -> EpochMetrics:
         """Aggregate batch-level losses into epoch metrics.
 
         Args:
@@ -242,15 +245,21 @@ class PINNTrainer(BaseTrainer):
         """
         if not loss_values:
             raise ValueError("No losses collected for the epoch.")
+        raw_component_means = {
+            name: float(torch.stack([item["components"][name].detach() for item in loss_values]).mean().item())
+            for name in self.active_loss_names
+        }
+        weighted_component_means = {
+            name: float(torch.stack([item["weighted_components"][name].detach() for item in loss_values]).mean().item())
+            for name in self.active_loss_names
+        }
         return EpochMetrics(
-            total_loss=float(torch.stack([item.total.detach() for item in loss_values]).mean().item()),
-            data_loss=float(torch.stack([item.data.detach() for item in loss_values]).mean().item()),
-            pde_loss=float(torch.stack([item.pde.detach() for item in loss_values]).mean().item()),
-            boundary_loss=float(torch.stack([item.boundary.detach() for item in loss_values]).mean().item()),
-            regularization_loss=float(torch.stack([item.regularization.detach() for item in loss_values]).mean().item()),
+            total_loss=float(torch.stack([item["total_loss"].detach() for item in loss_values]).mean().item()),
+            components=raw_component_means,
+            weighted_components=weighted_component_means,
         )
 
-    def _step(self, batch: dict[str, torch.Tensor], training: bool) -> LossBreakdown:
+    def _step(self, batch: dict[str, torch.Tensor], training: bool) -> dict[str, Any]:
         """Run one optimization or evaluation step.
 
         Args:
@@ -258,21 +267,22 @@ class PINNTrainer(BaseTrainer):
             training: Whether gradients and optimizer updates should be applied.
 
         Returns:
-            LossBreakdown: Loss values for the processed batch.
+            dict[str, Any]: Loss values for the processed batch.
         """
         prepared = self._move_batch(batch)
         if training:
             self.optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(True):
             with self.device_manager.autocast_context():
+                predictions = self.model(prepared["features"])
                 loss_breakdown = self.loss_fn(
                     model=self.model,
-                    features=prepared["features"],
-                    targets=prepared["target"],
-                    terms=prepared["term"],
+                    batch=prepared,
+                    predictions=predictions,
+                    context={},
                 )
             if training:
-                self.scaler.scale(loss_breakdown.total).backward()
+                self.scaler.scale(loss_breakdown["total_loss"]).backward()
                 self.scaler.unscale_(self.optimizer)
                 clip_grad_norm_(self.model.parameters(), self.config.trainer.gradient_clip_norm)
                 self.scaler.step(self.optimizer)
@@ -290,7 +300,7 @@ class PINNTrainer(BaseTrainer):
             EpochMetrics: Aggregated epoch metrics.
         """
         self.model.train(mode=training)
-        losses: list[LossBreakdown] = []
+        losses: list[dict[str, Any]] = []
         for batch in loader:
             losses.append(self._step(batch, training=training))
         return self._aggregate_epoch(losses)
@@ -356,8 +366,19 @@ class PINNTrainer(BaseTrainer):
             self.history["validation_total_loss"].append(validation_metrics.total_loss)
             self.writer.add_scalar("loss/train_total", train_metrics.total_loss, epoch)
             self.writer.add_scalar("loss/validation_total", validation_metrics.total_loss, epoch)
-            self.writer.add_scalar("loss/train_pde", train_metrics.pde_loss, epoch)
-            self.writer.add_scalar("loss/validation_pde", validation_metrics.pde_loss, epoch)
+            for name in self.active_loss_names:
+                train_raw = train_metrics.components[name]
+                validation_raw = validation_metrics.components[name]
+                train_weighted = train_metrics.weighted_components[name]
+                validation_weighted = validation_metrics.weighted_components[name]
+                self.history[f"train_raw_{name}"].append(train_raw)
+                self.history[f"validation_raw_{name}"].append(validation_raw)
+                self.history[f"train_weighted_{name}"].append(train_weighted)
+                self.history[f"validation_weighted_{name}"].append(validation_weighted)
+                self.writer.add_scalar(f"loss_component/train/{name}", train_raw, epoch)
+                self.writer.add_scalar(f"loss_component/validation/{name}", validation_raw, epoch)
+                self.writer.add_scalar(f"loss_component_weighted/train/{name}", train_weighted, epoch)
+                self.writer.add_scalar(f"loss_component_weighted/validation/{name}", validation_weighted, epoch)
             self._log_csv(epoch, "train", train_metrics)
             self._log_csv(epoch, "validation", validation_metrics)
 

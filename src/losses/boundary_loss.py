@@ -1,48 +1,57 @@
-"""Boundary-condition loss.
+"""Boundary-condition loss for term insurance.
 
-Created: 2026-05-31
-Purpose: Enforce the terminal reserve boundary condition for term-life contracts.
+Created: 2026-06-03
+Purpose: Enforce the terminal reserve condition that term-life liabilities vanish at maturity.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from torch import nn
 
+from src.data.dataset import FEATURE_INDEX, FEATURE_SCALES
+from src.losses.base_loss import BaseLoss
 
-class BoundaryLoss(nn.Module):
-    """Enforce V(T)=0 for term-life contracts.
+
+class BoundaryLoss(BaseLoss):
+    """Enforce the term-insurance boundary condition ``V(T)=0``.
 
     Scientific Context:
-        Term-life contracts have no remaining liability after maturity, so the
-        terminal reserve is constrained to zero.
+        Once coverage expires, a term-life contract no longer has future death
+        benefits to fund, so the reserve should collapse to zero at maturity.
 
     Business Interpretation:
-        This makes the model respect the business fact that the contract should
-        not carry reserve after coverage ends.
+        This prevents the model from carrying phantom liabilities after contract
+        expiry, which would distort capital and profitability views.
     """
 
-    def __init__(self) -> None:
-        """Initialize the boundary loss module."""
-        super().__init__()
-        self.criterion = nn.MSELoss()
-
-    def forward(self, features: torch.Tensor, terms: torch.Tensor, model: nn.Module) -> torch.Tensor:
-        """Compute the terminal boundary loss.
+    def forward(
+        self,
+        model: nn.Module,
+        batch: dict[str, torch.Tensor],
+        predictions: torch.Tensor,
+        context: dict[str, Any],
+    ) -> torch.Tensor:
+        """Compute the terminal boundary penalty.
 
         Args:
-            features: Input feature tensor.
-            terms: Policy maturity values.
-            model: Model used to predict boundary reserves.
+            model: Reserve model used to score the boundary inputs.
+            batch: Batch dictionary containing normalized features and ``term``.
+            predictions: In-batch reserve predictions. Unused here.
+            context: Shared execution context. Boundary predictions are written
+                here for diagnostics.
 
         Returns:
-            torch.Tensor: Scalar boundary-condition loss.
-
-        Business Interpretation:
-            This protects against unrealistic end-of-term reserve values that
-            would otherwise distort forecasting and stress results.
+            torch.Tensor: Reduced ``L_boundary`` scalar.
         """
+
+        del predictions
+        features = self.require_batch_tensor(batch, "features")
+        terms = self.require_batch_tensor(batch, "term")
         boundary_features = features.clone()
-        boundary_features[:, 0:1] = terms
+        boundary_features[:, FEATURE_INDEX["time"] : FEATURE_INDEX["time"] + 1] = terms / FEATURE_SCALES["time"]
         boundary_predictions = model(boundary_features)
-        return self.criterion(boundary_predictions, torch.zeros_like(boundary_predictions))
+        context["boundary_predictions"] = boundary_predictions
+        return self.reduce(boundary_predictions.pow(2))
