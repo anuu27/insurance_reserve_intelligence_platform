@@ -1,112 +1,123 @@
-"""Composite training loss.
+"""Config-driven total-loss assembly.
 
-Created: 2026-05-31
-Purpose: Assemble the weighted PINN objective from all constituent loss terms.
+Created: 2026-06-03
+Purpose: Build experiment-specific PINN, KINN, and hybrid objectives from YAML configuration.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Any
 
 import torch
 from torch import nn
 
-from src.losses.boundary_loss import BoundaryLoss
-from src.losses.data_loss import DataLoss
-from src.losses.pde_loss import PDELoss
-from src.losses.regularization_loss import RegularizationLoss
-from src.utils.config import LossConfig
-
-
-@dataclass(slots=True)
-class LossBreakdown:
-    """Named loss components.
-
-    Attributes:
-        total: Weighted total loss.
-        data: Supervised reserve-fitting loss.
-        pde: PDE residual loss.
-        boundary: Boundary-condition loss.
-        regularization: L2 regularization penalty.
-        residual: Pointwise PDE residual values.
-
-    Business Interpretation:
-        This breakdown lets researchers and model-risk reviewers see whether model
-        improvement is coming from better data fit, stronger physics compliance,
-        or better boundary adherence.
-    """
-
-    total: torch.Tensor
-    data: torch.Tensor
-    pde: torch.Tensor
-    boundary: torch.Tensor
-    regularization: torch.Tensor
-    residual: torch.Tensor
+from src.losses.registry import LOSS_REGISTRY
+from src.utils.config import LossConfig, LossSettingsConfig
 
 
 class TotalLoss(nn.Module):
-    """Composite objective for PINN training.
+    """Assemble the configured reserve-learning objective.
 
     Scientific Context:
-        The total objective combines supervised learning, PDE residual matching,
-        terminal boundary enforcement, and optional parameter regularization.
+        This module converts YAML into an executable objective by composing data,
+        PDE, boundary, monotonicity, solvency, smoothness, portfolio, and
+        regularization terms.
 
     Business Interpretation:
-        This is the training contract that balances empirical accuracy with
-        actuarial plausibility, which is important for reserve governance.
+        This is the experiment switchboard that allows the same model to be run
+        as a pure PINN, a knowledge-informed neural network, a hybrid model, or
+        a supervised-only reserve model.
     """
 
-    def __init__(self, config: LossConfig) -> None:
-        """Initialize the composite loss module.
+    def __init__(self, config: LossConfig, settings: LossSettingsConfig | None = None) -> None:
+        """Initialize the config-driven total loss.
 
         Args:
-            config: Loss-weight configuration.
+            config: Named loss configuration.
+            settings: Shared loss settings.
+
+        Raises:
+            ValueError: If the configuration references unknown loss names or if
+                an enabled loss has no weight.
+            NotImplementedError: If adaptive weighting is requested.
         """
+
         super().__init__()
         self.config = config
-        self.data_loss = DataLoss()
-        self.pde_loss = PDELoss()
-        self.boundary_loss = BoundaryLoss()
-        self.regularization_loss = RegularizationLoss()
+        self.settings = settings or LossSettingsConfig()
+        if self.settings.use_adaptive_weights:
+            raise NotImplementedError(
+                "Adaptive loss weighting is not implemented in this release. "
+                "Set loss_settings.use_adaptive_weights=false."
+            )
+        self._validate_config()
+        self.losses = nn.ModuleDict(
+            {
+                name: LOSS_REGISTRY[name](reduction=self.settings.reduction)
+                for name, term in self.config.terms.items()
+                if term.enabled
+            }
+        )
+        self.active_loss_names = list(self.losses.keys())
+
+    def _validate_config(self) -> None:
+        """Validate configured loss names and weights."""
+
+        configured_names = set(self.config.terms.keys())
+        available_names = set(LOSS_REGISTRY.keys())
+        unknown_names = sorted(configured_names - available_names)
+        if unknown_names:
+            raise ValueError(
+                "Configured loss names are not registered: "
+                f"{unknown_names}. Available loss names: {sorted(available_names)}"
+            )
+
+        missing_weight_names = sorted(
+            name for name, term in self.config.terms.items() if term.enabled and term.weight is None
+        )
+        if missing_weight_names:
+            raise ValueError(
+                "Enabled losses must define a weight. Missing weights for: "
+                f"{missing_weight_names}"
+            )
 
     def forward(
         self,
         model: nn.Module,
-        features: torch.Tensor,
-        targets: torch.Tensor,
-        terms: torch.Tensor,
-    ) -> LossBreakdown:
-        """Compute the full PINN loss breakdown.
+        batch: dict[str, torch.Tensor],
+        predictions: torch.Tensor,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Compute the weighted total loss and its components.
 
         Args:
-            model: Reserve prediction model.
-            features: Input features with gradients enabled.
-            targets: Supervised reserve targets.
-            terms: Policy maturity values for the boundary condition.
+            model: Reserve model being optimized.
+            batch: Batch dictionary containing model inputs and targets.
+            predictions: Current reserve predictions for the batch.
+            context: Optional shared dictionary for diagnostics.
 
         Returns:
-            LossBreakdown: Structured loss components and residuals.
-
-        Business Interpretation:
-            The output explains not just whether the model is wrong, but how it is
-            wrong from an actuarial and governance perspective.
+            dict[str, Any]: Total loss tensor plus component breakdowns.
         """
-        predictions = model(features)
-        data_component = self.data_loss(predictions, targets)
-        pde_component, residual = self.pde_loss(features, predictions)
-        boundary_component = self.boundary_loss(features, terms, model)
-        reg_component = self.regularization_loss(model)
-        total = (
-            self.config.lambda_data * data_component
-            + self.config.lambda_pde * pde_component
-            + self.config.lambda_boundary * boundary_component
-            + self.config.lambda_reg * reg_component
-        )
-        return LossBreakdown(
-            total=total,
-            data=data_component,
-            pde=pde_component,
-            boundary=boundary_component,
-            regularization=reg_component,
-            residual=residual,
-        )
+
+        local_context = {} if context is None else context
+        raw_components: dict[str, torch.Tensor] = {}
+        weighted_components: dict[str, torch.Tensor] = {}
+        total_loss = predictions.new_tensor(0.0)
+
+        for name, loss_module in self.losses.items():
+            raw_value = loss_module(model=model, batch=batch, predictions=predictions, context=local_context)
+            weight = self.config.terms[name].weight
+            if weight is None:
+                raise ValueError(f"Enabled loss '{name}' does not define a weight.")
+            weighted_value = raw_value * float(weight)
+            raw_components[name] = raw_value
+            weighted_components[name] = weighted_value
+            total_loss = total_loss + weighted_value
+
+        return {
+            "total_loss": total_loss,
+            "components": raw_components,
+            "weighted_components": weighted_components,
+            "context": local_context,
+        }

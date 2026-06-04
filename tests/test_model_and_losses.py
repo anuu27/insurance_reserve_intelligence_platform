@@ -1,7 +1,7 @@
 """Model and loss tests.
 
 Created: 2026-05-31
-Purpose: Validate reserve model forward passes and composite loss behavior.
+Purpose: Validate reserve model forward passes and config-driven loss behavior.
 """
 
 from __future__ import annotations
@@ -10,16 +10,39 @@ import torch
 
 from src.losses.total_loss import TotalLoss
 from src.models.factory import ModelFactory
-from src.utils.config import LossConfig, ModelConfig
+from src.utils.config import LossConfig, LossSettingsConfig, ModelConfig
 
 
 def test_model_forward_and_total_loss() -> None:
-    """Verify that the reserve model and composite loss produce valid tensor outputs."""
+    """Verify that the reserve model and total loss produce valid tensor outputs."""
     model = ModelFactory.create_pinn(ModelConfig())
-    features = torch.rand(8, 6, requires_grad=True)
-    targets = torch.rand(8, 1)
-    terms = torch.ones(8, 1) * 10.0
-    loss_fn = TotalLoss(LossConfig())
-    breakdown = loss_fn(model=model, features=features, targets=targets, terms=terms)
-    assert breakdown.total.item() >= 0.0
-    assert breakdown.residual.shape == (8, 1)
+    raw_features = torch.rand(8, 6)
+    raw_features[:, 0] *= 30.0
+    raw_features[:, 1] *= 100.0
+    raw_features[:, 2] *= 0.1
+    raw_features[:, 3] *= 10_000.0
+    raw_features[:, 4] *= 1_000_000.0
+    raw_features[:, 5] *= 0.05
+
+    features = raw_features.clone()
+    features[:, 0] /= 30.0
+    features[:, 1] /= 100.0
+    features[:, 2] /= 0.1
+    features[:, 3] /= 10_000.0
+    features[:, 4] /= 1_000_000.0
+    features[:, 5] /= 0.05
+    features.requires_grad_(True)
+
+    batch = {
+        "features": features,
+        "raw_features": raw_features,
+        "target": torch.rand(8, 1),
+        "term": torch.ones(8, 1) * 10.0,
+    }
+    loss_fn = TotalLoss(LossConfig(), settings=LossSettingsConfig(reduction="mean", use_adaptive_weights=False))
+    predictions = model(features)
+    breakdown = loss_fn(model=model, batch=batch, predictions=predictions, context={})
+    assert breakdown["total_loss"].item() >= 0.0
+    assert "data_loss" in breakdown["components"]
+    assert "pde_residual" in breakdown["context"]
+    assert breakdown["context"]["pde_residual"].shape == (8, 1)

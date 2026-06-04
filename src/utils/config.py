@@ -17,6 +17,33 @@ import yaml
 T = TypeVar("T")
 
 
+def _default_loss_terms() -> dict[str, "LossTermConfig"]:
+    """Create the default experiment-friendly loss menu.
+
+    Returns:
+        dict[str, LossTermConfig]: Default named loss-term configuration.
+
+    Business Interpretation:
+        These defaults define a practical starting point for reserve modeling
+        while still allowing analysts to move between PINN, KINN, hybrid, and
+        supervised experiments by editing only YAML.
+    """
+
+    return {
+        "data_loss": LossTermConfig(enabled=True, weight=1.0),
+        "pde_loss": LossTermConfig(enabled=True, weight=1.0),
+        "boundary_loss": LossTermConfig(enabled=True, weight=10.0),
+        "mortality_monotonicity_loss": LossTermConfig(enabled=False, weight=0.2),
+        "age_monotonicity_loss": LossTermConfig(enabled=False, weight=0.2),
+        "interest_rate_monotonicity_loss": LossTermConfig(enabled=False, weight=0.2),
+        "solvency_loss": LossTermConfig(enabled=True, weight=1.0),
+        "reserve_ceiling_loss": LossTermConfig(enabled=True, weight=1.0),
+        "smoothness_loss": LossTermConfig(enabled=False, weight=0.05),
+        "portfolio_consistency_loss": LossTermConfig(enabled=False, weight=0.5),
+        "l2_regularization_loss": LossTermConfig(enabled=True, weight=1e-6),
+    }
+
+
 def _coerce_dataclass(cls: Type[T], payload: Dict[str, Any]) -> T:
     """Recursively coerce a dictionary into a dataclass instance.
 
@@ -146,18 +173,77 @@ class ModelConfig:
 
 
 @dataclass(slots=True)
-class LossConfig:
-    """Loss term weights and regularization settings.
+class LossTermConfig:
+    """Configuration for one named loss term.
+
+    Attributes:
+        enabled: Whether the loss is active for the experiment.
+        weight: Scalar coefficient applied to the raw loss value.
 
     Business Interpretation:
-        These values define how strongly the model should prioritize empirical fit
-        versus actuarial consistency.
+        This is the experimenter's switch-and-weight control for a single model
+        governance rule, such as physics compliance, monotonicity, or solvency.
     """
 
-    lambda_data: float = 1.0
-    lambda_pde: float = 1.0
-    lambda_boundary: float = 1.0
-    lambda_reg: float = 1e-5
+    enabled: bool = False
+    weight: float | None = None
+
+
+@dataclass(slots=True)
+class LossConfig:
+    """Named loss configuration for PINN, KINN, and hybrid experiments.
+
+    Attributes:
+        terms: Mapping from loss name to its configuration.
+
+    Business Interpretation:
+        This structure lets researchers turn individual actuarial and
+        knowledge-informed controls on or off without rewriting Python code.
+    """
+
+    terms: dict[str, LossTermConfig] = field(default_factory=_default_loss_terms)
+
+    @classmethod
+    def from_mapping(cls, payload: dict[str, Any] | None) -> "LossConfig":
+        """Build a loss configuration from raw YAML content.
+
+        Args:
+            payload: Raw ``losses`` mapping from YAML.
+
+        Returns:
+            LossConfig: Parsed named loss configuration.
+        """
+
+        default_terms = _default_loss_terms()
+        if payload is None:
+            return cls(terms=default_terms)
+
+        merged_terms = dict(default_terms)
+        for name, value in payload.items():
+            if not isinstance(value, dict):
+                raise ValueError(
+                    "Each configured loss must be a mapping with at least "
+                    f"'enabled' and 'weight'. Invalid entry for '{name}': {value!r}"
+                )
+            merged_terms[name] = _coerce_dataclass(LossTermConfig, value)
+        return cls(terms=merged_terms)
+
+
+@dataclass(slots=True)
+class LossSettingsConfig:
+    """Settings shared by all configured loss modules.
+
+    Attributes:
+        reduction: Reduction used by scalar losses.
+        use_adaptive_weights: Whether adaptive reweighting is enabled.
+
+    Business Interpretation:
+        These settings control how the platform aggregates penalties across a
+        batch and whether weighting is fixed or dynamically adjusted.
+    """
+
+    reduction: str = "mean"
+    use_adaptive_weights: bool = False
 
 
 @dataclass(slots=True)
@@ -243,7 +329,8 @@ class ExperimentConfig:
         data: Data-generation settings.
         solver: Actuarial solver settings.
         model: Neural model settings.
-        losses: Loss-weight settings.
+        losses: Named loss-term settings.
+        loss_settings: Shared reduction and weighting settings.
         trainer: Training-loop settings.
         stress: Stress-scenario settings.
         optimization: Optimization settings.
@@ -262,6 +349,7 @@ class ExperimentConfig:
     solver: SolverConfig = field(default_factory=SolverConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     losses: LossConfig = field(default_factory=LossConfig)
+    loss_settings: LossSettingsConfig = field(default_factory=LossSettingsConfig)
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
     stress: StressScenarioConfig = field(default_factory=StressScenarioConfig)
     optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
@@ -290,7 +378,14 @@ class ConfigLoader:
         config_path = Path(path)
         with config_path.open("r", encoding="utf-8") as handle:
             payload = yaml.safe_load(handle) or {}
-        return _coerce_dataclass(ExperimentConfig, payload)
+        payload = dict(payload)
+        losses_payload = payload.pop("losses", None)
+        loss_settings_payload = payload.pop("loss_settings", None)
+        config = _coerce_dataclass(ExperimentConfig, payload)
+        config.losses = LossConfig.from_mapping(losses_payload)
+        if loss_settings_payload is not None:
+            config.loss_settings = _coerce_dataclass(LossSettingsConfig, loss_settings_payload)
+        return config
 
 
 def ensure_directories(config: ExperimentConfig) -> None:

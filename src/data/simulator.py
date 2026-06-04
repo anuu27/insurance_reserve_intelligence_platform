@@ -15,6 +15,26 @@ from src.actuarial.policy import MortalityProfile, Policy
 from src.data.mortality_loader import MortalityDataSource
 
 
+def _trapezoid(y: np.ndarray, x: np.ndarray) -> float:
+    """Integrate using the newest available NumPy trapezoid implementation.
+
+    Args:
+        y: Function values to integrate.
+        x: Grid points for the integration.
+
+    Returns:
+        float: Numerical integral result.
+
+    Business Interpretation:
+        This keeps premium generation portable across NumPy versions so reserve
+        research does not fail because of a local runtime mismatch.
+    """
+
+    if hasattr(np, "trapezoid"):
+        return float(np.trapezoid(y, x))
+    return float(np.trapz(y, x))
+
+
 @dataclass(frozen=True, slots=True)
 class RiskProfile:
     """Underwriting risk categories and their combined adjustment factor.
@@ -284,8 +304,8 @@ class PolicySimulator:
         )
         survival_probability = np.exp(-cumulative_hazard)
         discount_factor = np.exp(-interest_rate * times)
-        premium_annuity_epv = np.trapezoid(survival_probability * discount_factor, times)
-        benefit_epv = np.trapezoid(
+        premium_annuity_epv = _trapezoid(survival_probability * discount_factor, times)
+        benefit_epv = _trapezoid(
             survival_probability * mortality * sum_assured * discount_factor,
             times,
         )

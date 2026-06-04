@@ -17,6 +17,25 @@ from src.actuarial.actuarial_solver import BaseActuarialSolver
 from src.actuarial.policy import Policy
 
 
+FEATURE_INDEX = {
+    "time": 0,
+    "age": 1,
+    "interest_rate": 2,
+    "premium": 3,
+    "sum_assured": 4,
+    "mortality": 5,
+}
+
+FEATURE_SCALES = {
+    "time": 30.0,
+    "age": 100.0,
+    "interest_rate": 0.1,
+    "premium": 10_000.0,
+    "sum_assured": 1_000_000.0,
+    "mortality": 0.05,
+}
+
+
 @dataclass(slots=True)
 class ReserveRecord:
     """Single collocation record used for training or evaluation.
@@ -96,17 +115,18 @@ class ReserveDataset(Dataset[dict[str, torch.Tensor]]):
             dict[str, torch.Tensor]: Feature, target, and term tensors.
         """
         record = self.records[index]
-        features = torch.tensor(record.features, dtype=torch.float32)
+        raw_features = torch.tensor(record.features, dtype=torch.float32)
+        features = raw_features.clone()
 
-                # Feature normalization
-        features[0] /= 30.0        # time
-        features[1] /= 100.0       # age
-        features[2] /= 0.1         # interest rate
-        features[3] /= 10000.0     # premium
-        features[4] /= 1000000.0   # sum assured
-        features[5] /= 0.05        # mortality
+        features[FEATURE_INDEX["time"]] /= FEATURE_SCALES["time"]
+        features[FEATURE_INDEX["age"]] /= FEATURE_SCALES["age"]
+        features[FEATURE_INDEX["interest_rate"]] /= FEATURE_SCALES["interest_rate"]
+        features[FEATURE_INDEX["premium"]] /= FEATURE_SCALES["premium"]
+        features[FEATURE_INDEX["sum_assured"]] /= FEATURE_SCALES["sum_assured"]
+        features[FEATURE_INDEX["mortality"]] /= FEATURE_SCALES["mortality"]
         return {
             "features": features,
+            "raw_features": raw_features,
             "target": torch.tensor([record.reserve], dtype=torch.float32),
             "term": torch.tensor([record.term], dtype=torch.float32),
         }

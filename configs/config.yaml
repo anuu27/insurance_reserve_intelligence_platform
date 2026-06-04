@@ -50,10 +50,53 @@ model:
   skip_connections: false
 
 losses:
-  lambda_data: 1.0
-  lambda_pde: 1.0
-  lambda_boundary: 1.0
-  lambda_reg: 1.0e-6
+  data_loss:
+    enabled: true
+    weight: 1.0
+
+  pde_loss:
+    enabled: true
+    weight: 1.0
+
+  boundary_loss:
+    enabled: true
+    weight: 10.0
+
+  mortality_monotonicity_loss:
+    enabled: true
+    weight: 0.2
+
+  age_monotonicity_loss:
+    enabled: false
+    weight: 0.2
+
+  interest_rate_monotonicity_loss:
+    enabled: true
+    weight: 0.2
+
+  solvency_loss:
+    enabled: true
+    weight: 1.0
+
+  reserve_ceiling_loss:
+    enabled: true
+    weight: 1.0
+
+  smoothness_loss:
+    enabled: true
+    weight: 0.05
+
+  portfolio_consistency_loss:
+    enabled: false
+    weight: 0.5
+
+  l2_regularization_loss:
+    enabled: true
+    weight: 1.0e-6
+
+loss_settings:
+  reduction: mean
+  use_adaptive_weights: false
 
 trainer:
   run_name: actuary_twin_term_life_pinn

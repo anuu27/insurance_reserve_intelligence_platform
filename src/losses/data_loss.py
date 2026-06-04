@@ -1,31 +1,51 @@
-"""Supervised reserve fitting loss.
+"""Supervised reserve-fitting loss.
 
-Created: 2026-05-31
-Purpose: Provide the supervised data loss between PINN and classical reserves.
+Created: 2026-06-03
+Purpose: Measure squared error between predicted reserves and classical actuarial reserves.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from torch import nn
 
+from src.losses.base_loss import BaseLoss
 
-class DataLoss(nn.Module):
-    """Mean squared error against classical reserve targets."""
 
-    def __init__(self) -> None:
-        """Initialize the data loss module."""
-        super().__init__()
-        self.criterion = nn.MSELoss()
+class DataLoss(BaseLoss):
+    """Classical supervised learning term for reserve prediction.
 
-    def forward(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """Compute the supervised reserve-fitting loss.
+    Scientific Context:
+        This loss anchors the neural network to benchmark reserves produced by
+        the actuarial solver.
+
+    Business Interpretation:
+        It answers the most direct business question: how close is the model to
+        the reserve amount the legacy valuation engine would report?
+    """
+
+    def forward(
+        self,
+        model: nn.Module,
+        batch: dict[str, torch.Tensor],
+        predictions: torch.Tensor,
+        context: dict[str, Any],
+    ) -> torch.Tensor:
+        """Compute mean squared reserve error.
 
         Args:
+            model: Reserve model. Unused here because the predictions are
+                already supplied by the trainer.
+            batch: Batch dictionary containing ``target``.
             predictions: Model reserve predictions.
-            targets: Classical reserve targets.
+            context: Shared execution context. Unused for this loss.
 
         Returns:
-            torch.Tensor: Scalar mean squared error.
+            torch.Tensor: Reduced ``L_data`` scalar.
         """
-        return self.criterion(predictions, targets)
+
+        del model, context
+        targets = self.require_batch_tensor(batch, "target")
+        return self.reduce((predictions - targets).pow(2))
