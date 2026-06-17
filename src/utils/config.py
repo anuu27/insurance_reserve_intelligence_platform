@@ -36,6 +36,7 @@ def _default_loss_terms() -> dict[str, "LossTermConfig"]:
         "mortality_monotonicity_loss": LossTermConfig(enabled=False, weight=0.2),
         "age_monotonicity_loss": LossTermConfig(enabled=False, weight=0.2),
         "interest_rate_monotonicity_loss": LossTermConfig(enabled=False, weight=0.2),
+        "sum_assured_monotonicity_loss": LossTermConfig(enabled=True, weight=1.0),
         "solvency_loss": LossTermConfig(enabled=True, weight=1.0),
         "reserve_ceiling_loss": LossTermConfig(enabled=True, weight=1.0),
         "smoothness_loss": LossTermConfig(enabled=False, weight=0.05),

@@ -17,7 +17,7 @@ from src.losses.portfolio_consistency_loss import PortfolioConsistencyLoss
 from src.losses.reserve_ceiling_loss import ReserveCeilingLoss
 from src.losses.smoothness_loss import SmoothnessLoss
 from src.losses.solvency_loss import SolvencyLoss
-
+from src.losses.sum_assured_monotonicity_loss import SumAssuredMonotonicityLoss
 
 LOSS_REGISTRY = {
     "data_loss": DataLoss,
@@ -31,4 +31,5 @@ LOSS_REGISTRY = {
     "smoothness_loss": SmoothnessLoss,
     "portfolio_consistency_loss": PortfolioConsistencyLoss,
     "l2_regularization_loss": L2RegularizationLoss,
+    "sum_assured_monotonicity_loss": SumAssuredMonotonicityLoss,
 }

@@ -72,10 +72,16 @@ class MLP(nn.Module):
         self.activations = nn.ModuleList()
         self.dropouts = nn.ModuleList()
         current_dim = input_dim
+        self.projections = nn.ModuleList()   # 1x1 projections for skip when dims differ
         for _ in range(num_layers - 1):
             self.hidden_layers.append(nn.Linear(current_dim, hidden_dim))
             self.activations.append(act())
             self.dropouts.append(nn.Dropout(dropout) if dropout > 0.0 else nn.Identity())
+            # If input and output dims differ, project the residual so skip always works
+            if skip_connections and current_dim != hidden_dim:
+                self.projections.append(nn.Linear(current_dim, hidden_dim, bias=False))
+            else:
+                self.projections.append(nn.Identity())
             current_dim = hidden_dim
         self.output_layer = nn.Linear(current_dim, 1)
 
@@ -90,9 +96,11 @@ class MLP(nn.Module):
         """
 
         hidden = features
-        for layer, activation, dropout in zip(self.hidden_layers, self.activations, self.dropouts):
+        for layer, activation, dropout, proj in zip(
+            self.hidden_layers, self.activations, self.dropouts, self.projections
+        ):
             residual = hidden
             hidden = dropout(activation(layer(hidden)))
-            if self.skip_connections and hidden.shape == residual.shape:
-                hidden = hidden + residual
+            if self.skip_connections:
+                hidden = hidden + proj(residual)   # proj is Identity when dims match
         return self.output_layer(hidden)
