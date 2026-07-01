@@ -1,7 +1,7 @@
 """Mortality monotonicity loss.
 
-Created: 2026-06-03
-Purpose: Encourage reserves to increase when mortality intensity increases.
+Created: 2026-06-03  Revised: 2026-06-11
+Purpose: Enforce dV/dμ >= 0 via finite-difference perturbation.
 """
 
 from __future__ import annotations
@@ -11,20 +11,22 @@ from typing import Any
 import torch
 from torch import nn
 
+from src.data.dataset import FEATURE_INDEX, FEATURE_SCALES
 from src.losses.base_loss import BaseLoss
+
+_MU_IDX = FEATURE_INDEX["mortality"]
+# Perturbation: 0.001 absolute mortality intensity change / scale
+_DELTA = 0.001 / FEATURE_SCALES["mortality"]
 
 
 class MortalityMonotonicityLoss(BaseLoss):
-    """Penalize violations of ``dV/dμ >= 0``.
+    """Enforce dV/dμ >= 0 using finite-difference output comparison.
 
-    Scientific Context:
-        Higher mortality generally increases the expected present value of death
-        benefits for term-life business, so reserves should not fall as
-        mortality rises.
-
-    Business Interpretation:
-        This is a knowledge-informed control that discourages the model from
-        learning reserve curves that contradict a basic actuarial intuition.
+    Why finite difference:
+        Autograd dz/d(mu_norm) is negligibly small in the standardised output
+        space, giving near-zero weight updates. Finite difference gives a direct,
+        magnitude-proportional signal: the more the model wrongly predicts a
+        lower reserve at higher mortality, the larger the penalty.
     """
 
     def forward(
@@ -34,8 +36,15 @@ class MortalityMonotonicityLoss(BaseLoss):
         predictions: torch.Tensor,
         context: dict[str, Any],
     ) -> torch.Tensor:
-        """Compute the mortality monotonicity penalty."""
+        del context
+        features = batch["features"]
 
-        del model, context
-        derivative = self.first_derivative(predictions=predictions, batch=batch, name="mortality")
-        return self.reduce(torch.relu(-derivative))
+        # Perturb mortality upward by Δμ
+        features_high = features.clone()
+        features_high[:, _MU_IDX] = features_high[:, _MU_IDX] + _DELTA
+
+        pred_high = model(features_high)
+
+        # dV/dμ < 0 is a violation — penalise relu(V(μ) - V(μ+Δ))
+        violation = predictions - pred_high
+        return self.reduce(torch.relu(violation) * 10.0)

@@ -127,9 +127,19 @@ def build_datasets(
     train_policies = simulator.generate_random_policies(config.data.train_size)
     validation_policies = simulator.generate_random_policies(config.data.validation_size)
     test_policies = simulator.generate_random_policies(config.data.test_size)
+
+    # Fit standardisation statistics on training set only, then share with val/test
     train_dataset = ReserveDataset(train_policies, solver, config.data.time_steps)
-    validation_dataset = ReserveDataset(validation_policies, solver, config.data.time_steps)
-    test_dataset = ReserveDataset(test_policies, solver, config.data.time_steps)
+    validation_dataset = ReserveDataset(
+        validation_policies, solver, config.data.time_steps,
+        target_mean=train_dataset.target_mean,
+        target_std=train_dataset.target_std,
+    )
+    test_dataset = ReserveDataset(
+        test_policies, solver, config.data.time_steps,
+        target_mean=train_dataset.target_mean,
+        target_std=train_dataset.target_std,
+    )
     return train_dataset, validation_dataset, test_dataset, test_policies
 
 

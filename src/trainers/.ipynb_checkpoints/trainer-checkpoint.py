@@ -393,7 +393,7 @@ class PINNTrainer(BaseTrainer):
         cfg_weight = float(self.config.losses.terms[name].weight or 0.0)
         if name not in self._CONSTRAINT_LOSSES:
             return cfg_weight
-        warmup = max(15, int(self.config.trainer.epochs * 0.10))  # 10% warmup: shape learned faster on fresh run
+        warmup = max(20, int(self.config.trainer.epochs * 0.10))
         effective_epoch = max(0, epoch - self.start_epoch)  # relative to this run
         ramp = min(1.0, effective_epoch / warmup)
         return cfg_weight * ramp

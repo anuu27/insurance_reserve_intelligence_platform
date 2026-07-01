@@ -49,11 +49,16 @@ def main() -> None:
         f"MSE={result.mse:.6f} MAE={result.mae:.6f} RMSE={result.rmse:.6f} R2={result.r2:.6f}"
     )
 
-    sample_features = torch.stack(
-        [test_dataset[i]["features"] for i in range(100)]
-)
+    sample_features = torch.stack([test_dataset[i]["features"] for i in range(100)])
+    sample_raw_features = torch.stack([test_dataset[i]["raw_features"] for i in range(100)])
     output_csv = Path(config.paths.reports_dir) / "sensitivity_report.csv"
-    evaluator.generate_sensitivity_report(sample_features, str(output_csv))
+    evaluator.generate_sensitivity_report(
+        sample_features,
+        str(output_csv),
+        raw_features=sample_raw_features,
+        target_mean=test_dataset.target_mean,
+        target_std=test_dataset.target_std,
+    )
     print(f"Sensitivity report written to {output_csv}")
 
     # ==========================================
