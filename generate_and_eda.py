@@ -59,8 +59,9 @@ from src.data.mortality_loader import CSVMortalityLoader
 from src.utils.config import ConfigLoader, ensure_directories
 
 # ── constants ──────────────────────────────────────────────────────────────────
+config = ConfigLoader.load(Path("configs/config.yaml"))
 CONFIG_PATH = Path("configs/config.yaml")
-EDA_DIR = Path("artifacts/eda")
+EDA_DIR = (Path("artifacts") / config.trainer.run_name / "eda")
 SAMPLE_TRAJECTORIES = 40   # how many policies to draw on the trajectory plot
 FIGURE_DPI = 130
 PALETTE = "#4C6EF5"        # single-hue accent for histograms
