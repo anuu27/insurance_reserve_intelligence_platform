@@ -1,24 +1,18 @@
-"""Interest-rate monotonicity loss.
-
-Purpose: Enforce dV/dr <= 0 via finite-difference perturbation.
-"""
+"""Interest-rate sensitivity loss."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
-from src.data.dataset import FEATURE_INDEX
 from src.losses.base_loss import BaseLoss
-
-_R_IDX = FEATURE_INDEX["interest_rate"]
-_ABSOLUTE_RATE_DELTA = 0.005
 
 
 class InterestRateMonotonicityLoss(BaseLoss):
-    """Enforce dV/dr <= 0 using finite-difference output comparison."""
+    """Match d(V/S)/dr to the classical solver sensitivity target."""
 
     def forward(
         self,
@@ -27,28 +21,24 @@ class InterestRateMonotonicityLoss(BaseLoss):
         predictions: torch.Tensor,
         context: dict[str, Any],
     ) -> torch.Tensor:
-        del context
+        del model, context
 
-        features = batch["features"]
+        target_mean = batch["target_mean"].to(predictions.device)
+        target_std = batch["target_std"].to(predictions.device)
+        target_sensitivity = self.require_batch_tensor(
+            batch,
+            "interest_rate_sensitivity_target",
+        ).to(predictions.device)
 
-        if "interest_std" not in batch:
-            raise KeyError(
-                "InterestRateMonotonicityLoss requires batch['interest_std']. "
-                "ReserveDataset.__getitem__ must return interest_std."
-            )
-
-        interest_std = batch["interest_std"].to(
-            device=features.device,
-            dtype=features.dtype,
+        reserve_ratio = predictions * target_std + target_mean
+        reserve_ratio_sensitivity = self.first_derivative(
+            predictions=reserve_ratio,
+            batch=batch,
+            name="scenario_interest_rate",
         )
-
-        delta_norm = _ABSOLUTE_RATE_DELTA / interest_std.clamp_min(1e-8)
-
-        features_high = features.clone()
-        features_high[:, _R_IDX] = features_high[:, _R_IDX] + delta_norm.squeeze(-1)
-
-        pred_high = model(features_high)
-
-        violation = pred_high - predictions
-
-        return self.reduce(torch.relu(violation).pow(2))
+        return F.huber_loss(
+            reserve_ratio_sensitivity,
+            target_sensitivity,
+            reduction=self.reduction,
+            delta=0.01,
+        )

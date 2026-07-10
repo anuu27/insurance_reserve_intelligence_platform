@@ -42,7 +42,7 @@ class ReserveEvaluator:
         S,
     ):
         """
-        Convert network output z back to reserve (£)
+        Convert network output z back to reserve (Â£)
 
         V = (z * std + mean) * SumAssured
         """
@@ -137,10 +137,10 @@ class ReserveEvaluator:
 
         return grads
 
-    # ── public API ────────────────────────────────────────────────────────────
+    # â”€â”€ public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def evaluate(self, dataloader: DataLoader) -> EvaluationResult:
-        """Regression metrics in real £."""
+        """Regression metrics in real Â£."""
         self.model.eval()
         y_true, y_pred = [], []
         for batch in dataloader:
@@ -177,9 +177,9 @@ class ReserveEvaluator:
     
         Autograd:
             dV/dr
-            dV/dμ
+            dV/dÎ¼
             dV/dP
-            d²V/dr²
+            dÂ²V/drÂ²
     
         Finite Difference:
             dV/dS
@@ -226,8 +226,8 @@ class ReserveEvaluator:
         
         print("\nGradient diagnostics")
 
-        print("Interest grad :", grads[:, FEATURE_INDEX["interest_rate"]].abs().mean().item())
-        print("Premium grad  :", grads[:, FEATURE_INDEX["premium"]].abs().mean().item())
+        print("Interest grad :", grads[:, FEATURE_INDEX["scenario_interest_rate"]].abs().mean().item())
+        print("Premium grad  :", grads[:, FEATURE_INDEX["premium_ratio"]].abs().mean().item())
         print("Mortality grad:", grads[:, FEATURE_INDEX["mortality"]].abs().mean().item())
         print("SA grad       :", grads[:, FEATURE_INDEX["sum_assured"]].abs().mean().item())
         if interest_std < 1e-8:
@@ -237,7 +237,7 @@ class ReserveEvaluator:
             premium_std = 1.0
         
         dV_dr = (
-            grads[:, FEATURE_INDEX["interest_rate"]]
+            grads[:, FEATURE_INDEX["scenario_interest_rate"]]
             / interest_std
         ).detach().cpu().numpy()
         
@@ -247,7 +247,7 @@ class ReserveEvaluator:
         ).detach().cpu().numpy()
         
         dV_dP = (
-            grads[:, FEATURE_INDEX["premium"]]
+            grads[:, FEATURE_INDEX["premium_ratio"]]
             / premium_std
         ).detach().cpu().numpy()
     
@@ -289,7 +289,7 @@ class ReserveEvaluator:
             create_graph=True,
         )[0]
     
-        r_idx = FEATURE_INDEX["interest_rate"]
+        r_idx = FEATURE_INDEX["scenario_interest_rate"]
         
         grad2_z = torch.autograd.grad(
             outputs=grad_z[:, r_idx:r_idx + 1],
@@ -315,7 +315,7 @@ class ReserveEvaluator:
         print("Mean reserve :", v_mean_real)
         
         print("Mean dV/dr  :", np.mean(dV_dr))
-        print("Mean dV/dμ  :", np.mean(dV_dmu))
+        print("Mean dV/dÎ¼  :", np.mean(dV_dmu))
         print("Mean dV/dP  :", np.mean(dV_dP))
         print("Mean dV/dS  :", np.mean(dV_dS))
     
@@ -385,15 +385,15 @@ class ReserveEvaluator:
                 f"{np.abs(sens_df[col]).mean():.6f}"
             )
 
-        # ── 1. Sensitivity report (raw dV/dx, different units) ────────────────
+        # â”€â”€ 1. Sensitivity report (raw dV/dx, different units) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         sens_df.to_csv(output_path, index=False)
         plot_sensitivities(sens_df, output_path.replace(".csv", ".png"))
 
-        # ── 2. Elasticity report (dimensionless, all comparable) ─────────────
+        # â”€â”€ 2. Elasticity report (dimensionless, all comparable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         elas_path = str(output_path).replace("sensitivity_report", "elasticity_report")
         elas_png  = elas_path.replace(".csv", ".png")
         premium_ratio_mean = float(
-            raw_features[:, FEATURE_INDEX["premium"]]
+            raw_features[:, FEATURE_INDEX["premium_ratio"]]
             .mean()
             .item()
         )
@@ -405,6 +405,6 @@ class ReserveEvaluator:
             premium_ratio_mean,
         )
         elas_summary.to_csv(elas_path, index=False)
-        print(f"  elasticity CSV   → {elas_path}")
+        print(f"  elasticity CSV   â†’ {elas_path}")
 
         return sens_df

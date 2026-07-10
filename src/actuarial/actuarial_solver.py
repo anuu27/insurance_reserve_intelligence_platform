@@ -72,7 +72,7 @@ class ThieleSolver(BaseActuarialSolver):
     """Numerically solve the term-life Thiele reserve equation.
 
     Scientific Context:
-        The solver integrates ``dV/dt = rV + P - μ(S - V)`` backward from the
+        The solver integrates ``dV/dt = rV + P - Î¼(S - V)`` backward from the
         terminal condition ``V(T)=0``. This is the standard continuous-time
         reserve formulation for a one-state term-life contract under mortality and
         interest assumptions.
@@ -125,7 +125,7 @@ class ThieleSolver(BaseActuarialSolver):
         reserve_value = float(reserve[0])
         mortality = policy.mortality_profile.intensity_at(time_point)
         derivative = (
-            policy.interest_rate * reserve_value
+            policy.scenario_interest_rate * reserve_value
             + policy.premium
             - mortality * (policy.sum_assured - reserve_value)
         )
@@ -230,7 +230,7 @@ class ThieleSolver(BaseActuarialSolver):
         Business Interpretation:
             This method is the main actuarial valuation entry point for generating
             reserve curves used in training, validation, and scenario analysis.
-            The floor ensures no negative reserves enter any downstream component —
+            The floor ensures no negative reserves enter any downstream component â€”
             training data, evaluation, digital twin, stress testing, or optimisation.
         """
         if self.method.lower() == "rk4":

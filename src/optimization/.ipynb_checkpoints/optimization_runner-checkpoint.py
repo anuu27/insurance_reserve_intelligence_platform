@@ -42,7 +42,6 @@ class OptimizationRunner:
         output_dir: str | Path = "artifacts/optimization",
     ) -> None:
         self.config = config
-        self.config.model.input_dim = 6
         ensure_directories(self.config)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +68,11 @@ class OptimizationRunner:
         config = ConfigLoader.load(config_path)
         set_seed(config.seed)
         return cls(config=config, checkpoint_path=checkpoint_path, output_dir=output_dir)
-
+        
+    def valuation_time(self, policy=None) -> float:
+        policy = self.policy if policy is None else policy
+        return min(max(float(policy.term) * 0.5, 1.0), float(policy.term))
+        
     def run(self, mode: OptimizationMode = "all") -> dict[str, OptimizationResult]:
         results: dict[str, OptimizationResult] = {}
         if mode in ("all", "pricing"):
@@ -85,67 +88,69 @@ class OptimizationRunner:
         if results:
             self._write_summary(results)
         return results
-
+    
     def run_pricing(self) -> OptimizationResult:
-        result = optimize_premium(policy=self.policy, predictor=self.predictor)
+        result = optimize_premium(
+            policy=self.policy,
+            predictor=self.predictor,
+            time_point=self.valuation_time(),
+        )
         self._write_result("pricing", result)
         self._write_history("pricing", result)
         self._write_sweep_plots()
         return result
-
+    
+    
     def run_capital(self) -> OptimizationResult:
-        result = optimize_capital_allocation(policy=self.policy, predictor=self.predictor)
+        result = optimize_capital_allocation(
+            policy=self.policy,
+            predictor=self.predictor,
+            time_point=self.valuation_time(),
+        )
         self._write_result("capital", result)
         self._write_history("capital", result)
         return result
-
+    
+    
     def run_product_design(self) -> OptimizationResult:
+        valuation_time = self.valuation_time()
         baseline = self.baseline_breakdown()
+    
         result = optimize_product_design(
             base_policy=self.policy,
             predictor=self.predictor,
             premium_bounds=(max(self.policy.premium * 0.5, 1e-6), self.policy.premium * 2.0),
             coverage_bounds=(max(self.policy.sum_assured * 0.5, 1.0), self.policy.sum_assured * 1.5),
             term_bounds=(max(1.0, self.policy.term * 0.5), self.policy.term * 1.5),
-            interest_rate_bounds=(max(-0.01, self.policy.interest_rate - 0.02), self.policy.interest_rate + 0.02),
+            interest_rate_bounds=(max(-0.01, self.policy.scenario_interest_rate - 0.02), self.policy.scenario_interest_rate + 0.02),
             capital=max(baseline.reserve, 0.0) * 1.5,
+            time_point=valuation_time,
         )
+    
         self._write_result("product_design", result)
         self._write_history("product_design", result)
         return result
-
+    
+    
     def run_portfolio(self) -> OptimizationResult:
         result = optimize_portfolio_premiums(
             policies=self.portfolio,
             predictor=self.predictor,
             diversification_credit=0.15,
             solvency_threshold=1.5,
+            time_point=[self.valuation_time(policy) for policy in self.portfolio],
         )
         self._write_result("portfolio", result)
         self._write_history("portfolio", result)
         return result
-
-    def run_scenarios(self) -> pd.DataFrame:
-        simulator = build_simulator(self.config)
-        scenarios = {
-            "base": ScenarioDefinition(),
-            "interest_plus_2pct": ScenarioDefinition(interest_rate_shift=0.02),
-            "mortality_plus_20pct": ScenarioDefinition(mortality_multiplier=1.20),
-            "lapse_plus_15pct": ScenarioDefinition(),
-            "inflation_plus_10pct": ScenarioDefinition(premium_multiplier=1.10),
-        }
-        rows: list[dict[str, float | str | bool]] = []
-        for name, scenario in scenarios.items():
-            policies = simulator.generate_scenario_policies(self.portfolio, scenario)
-            rows.append(self._result_row(f"{name}_pricing", optimize_premium(policies[0], self.predictor)))
-            rows.append(self._result_row(f"{name}_capital", optimize_capital_allocation(policies[0], self.predictor)))
-            rows.append(self._result_row(f"{name}_portfolio", optimize_portfolio_premiums(policies, self.predictor)))
-        frame = pd.DataFrame(rows)
-        frame.to_csv(self.output_dir / "scenario.csv", index=False)
-        return frame
-
+    
+    
     def baseline_breakdown(self):
-        return profit_breakdown(policy=self.policy, predictor=self.predictor)
+        return profit_breakdown(
+            policy=self.policy,
+            predictor=self.predictor,
+            time_point=self.valuation_time(),
+        )
 
     def print_before_after(self, results: dict[str, OptimizationResult]) -> None:
         baseline = self.baseline_breakdown()
@@ -163,7 +168,57 @@ class OptimizationRunner:
             for key, value in result.diagnostics.items():
                 print(f"{key:<14} {value:,.2f}")
             print("-" * 56)
-
+    def run_scenarios(self) -> pd.DataFrame:
+        simulator = build_simulator(self.config)
+    
+        scenarios = {
+            "base": ScenarioDefinition(),
+            "interest_plus_2pct": ScenarioDefinition(interest_rate_shift=0.02),
+            "mortality_plus_20pct": ScenarioDefinition(mortality_multiplier=1.20),
+            "inflation_plus_10pct": ScenarioDefinition(premium_multiplier=1.10),
+        }
+    
+        rows: list[dict[str, float | str | bool]] = []
+    
+        for name, scenario in scenarios.items():
+            policies = simulator.generate_scenario_policies(self.portfolio, scenario)
+            valuation_times = [self.valuation_time(policy) for policy in policies]
+    
+            rows.append(
+                self._result_row(
+                    f"{name}_pricing",
+                    optimize_premium(
+                        policies[0],
+                        self.predictor,
+                        time_point=valuation_times[0],
+                    ),
+                )
+            )
+            rows.append(
+                self._result_row(
+                    f"{name}_capital",
+                    optimize_capital_allocation(
+                        policies[0],
+                        self.predictor,
+                        time_point=valuation_times[0],
+                    ),
+                )
+            )
+            rows.append(
+                self._result_row(
+                    f"{name}_portfolio",
+                    optimize_portfolio_premiums(
+                        policies,
+                        self.predictor,
+                        time_point=valuation_times,
+                    ),
+                )
+            )
+    
+        frame = pd.DataFrame(rows)
+        frame.to_csv(self.output_dir / "scenario.csv", index=False)
+        return frame
+    
     def _build_training_context(self):
         train_dataset, _, _, test_policies = build_datasets(self.config)
         portfolio = test_policies[: min(5, len(test_policies))]
@@ -218,19 +273,50 @@ class OptimizationRunner:
             subset = sweep[sweep["variable"] == variable]
             plot_metric_sweep(subset, "value", "profit", self.output_dir / f"profit_vs_{variable}.png", f"Profit vs {variable.replace('_', ' ').title()}")
             plot_metric_sweep(subset, "value", "reserve", self.output_dir / f"reserve_vs_{variable}.png", f"Reserve vs {variable.replace('_', ' ').title()}")
+            
 
     def _metric_sweep(self) -> pd.DataFrame:
         rows: list[dict[str, float | str]] = []
+        valuation_time = self.valuation_time()
+    
         definitions = {
             "premium": np.linspace(max(self.policy.premium * 0.5, 1e-6), self.policy.premium * 1.8, 30),
             "sum_assured": np.linspace(max(self.policy.sum_assured * 0.5, 1.0), self.policy.sum_assured * 1.5, 30),
-            "interest_rate": np.linspace(max(-0.01, self.policy.interest_rate - 0.03), self.policy.interest_rate + 0.03, 30),
+            "scenario_interest_rate": np.linspace(
+                max(-0.01, self.policy.scenario_interest_rate - 0.03),
+                self.policy.scenario_interest_rate + 0.03,
+                30,
+            ),
         }
+    
         for variable, values in definitions.items():
             for value in values:
-                candidate = replace(self.policy, **{variable: float(value)})
-                breakdown = profit_breakdown(policy=candidate, predictor=self.predictor)
-                rows.append({"variable": variable, "value": float(value), "profit": breakdown.profit, "reserve": breakdown.reserve})
+                if variable == "scenario_interest_rate":
+                    candidate = replace(
+                        self.policy,
+                        scenario_interest_rate=float(value),
+                        interest_rate=float(value),
+                    )
+                    plot_variable = "interest_rate"
+                else:
+                    candidate = replace(self.policy, **{variable: float(value)})
+                    plot_variable = variable
+    
+                breakdown = profit_breakdown(
+                    policy=candidate,
+                    predictor=self.predictor,
+                    time_point=valuation_time,
+                )
+    
+                rows.append(
+                    {
+                        "variable": plot_variable,
+                        "value": float(value),
+                        "profit": breakdown.profit,
+                        "reserve": breakdown.reserve,
+                    }
+                )
+    
         return pd.DataFrame(rows)
 
     @staticmethod

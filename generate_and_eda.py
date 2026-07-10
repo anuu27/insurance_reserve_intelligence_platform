@@ -38,6 +38,7 @@ Output files (all under artifacts/eda/):
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import textwrap
 from pathlib import Path
 
@@ -351,102 +352,188 @@ def plot_reserve_vs_mortality(traj_df: pd.DataFrame) -> None:
 
 
 def plot_reserve_vs_sum_assured(traj_df: pd.DataFrame) -> None:
-    """Reserve vs sum assured — core proportionality relationship."""
+    """Reserve vs sum assured - core proportionality relationship."""
     peak_df = (
         traj_df.groupby(["policy_id", "sum_assured", "age", "interest_rate"])["reserve"]
-        .max().reset_index().rename(columns={"reserve": "peak_reserve"})
+        .max()
+        .reset_index()
+        .rename(columns={"reserve": "peak_reserve"})
     )
-    peak_df["v"] = peak_df["peak_reserve"] / peak_df["sum_assured"]  # normalised ratio
+    peak_df["v"] = peak_df["peak_reserve"] / peak_df["sum_assured"]
 
     fig, axes = plt.subplots(1, 3, figsize=(17, 5))
 
-    # Raw: peak reserve vs sum assured
     sc = axes[0].scatter(
-        peak_df["sum_assured"] / 1_000, peak_df["peak_reserve"],
-        c=peak_df["age"], cmap="plasma", alpha=0.5, s=14, linewidths=0,
+        peak_df["sum_assured"] / 1_000,
+        peak_df["peak_reserve"],
+        c=peak_df["age"],
+        cmap="plasma",
+        alpha=0.5,
+        s=14,
+        linewidths=0,
     )
     fig.colorbar(sc, ax=axes[0], label="Issue age")
-    # Fit line
+
     coeffs = np.polyfit(peak_df["sum_assured"], peak_df["peak_reserve"], 1)
-    x_line = np.linspace(peak_df["sum_assured"].min(), peak_df["sum_assured"].max(), 100)
-    axes[0].plot(x_line / 1_000, np.polyval(coeffs, x_line),
-                 color="#E03131", linewidth=1.5, linestyle="--", label=f"Slope {coeffs[0]:.3f}")
+    x_line = np.linspace(
+        peak_df["sum_assured"].min(),
+        peak_df["sum_assured"].max(),
+        100,
+    )
+    axes[0].plot(
+        x_line / 1_000,
+        np.polyval(coeffs, x_line),
+        color="#E03131",
+        linewidth=1.5,
+        linestyle="--",
+        label=f"Slope {coeffs[0]:.3f}",
+    )
     axes[0].set_xlabel("Sum assured (£k)")
     axes[0].set_ylabel("Peak reserve (£)")
-    axes[0].set_title("Peak reserve vs sum assured(coloured by age)")
+    axes[0].set_title("Peak reserve vs sum assured (coloured by age)")
     axes[0].legend(fontsize=8)
 
-    # Normalised: v = V/S — should be roughly constant across S
     axes[1].scatter(
-        peak_df["sum_assured"] / 1_000, peak_df["v"],
-        c=peak_df["age"], cmap="plasma", alpha=0.5, s=14, linewidths=0,
+        peak_df["sum_assured"] / 1_000,
+        peak_df["v"],
+        c=peak_df["age"],
+        cmap="plasma",
+        alpha=0.5,
+        s=14,
+        linewidths=0,
     )
-    axes[1].axhline(peak_df["v"].mean(), color="#E03131", linewidth=1.4,
-                    linestyle="--", label=f"Mean v = {peak_df['v'].mean():.4f}")
+    axes[1].axhline(
+        peak_df["v"].mean(),
+        color="#E03131",
+        linewidth=1.4,
+        linestyle="--",
+        label=f"Mean v = {peak_df['v'].mean():.4f}",
+    )
     axes[1].set_xlabel("Sum assured (£k)")
     axes[1].set_ylabel("v = Peak reserve / Sum assured")
-    axes[1].set_title("Normalised reserve v = V/S vs sum assured(should be roughly flat — confirms V∝S)")
+    axes[1].set_title("Normalised reserve v = V/S vs sum assured")
     axes[1].legend(fontsize=8)
 
-    # Mean reserve by SA decile
-    peak_df["sa_decile"] = pd.qcut(peak_df["sum_assured"], q=5,
-                                    labels=["Q1(£50k)", "Q2", "Q3", "Q4", "Q5(£1M)"])
+    peak_df["sa_decile"] = pd.qcut(
+        peak_df["sum_assured"],
+        q=5,
+        duplicates="drop",
+    )
+
     grouped = peak_df.groupby("sa_decile", observed=True)["peak_reserve"].mean()
-    bars = axes[2].bar(grouped.index, grouped.values / 1_000, color="#2F9E44", edgecolor="white")
+
+    bar_labels = [str(interval) for interval in grouped.index]
+    bars = axes[2].bar(
+        bar_labels,
+        grouped.values / 1_000,
+        color="#2F9E44",
+        edgecolor="white",
+    )
     axes[2].set_xlabel("Sum assured quintile")
     axes[2].set_ylabel("Mean peak reserve (£k)")
-    axes[2].set_title("Mean peak reserve by sum assured quintile(expected: strongly increasing)")
+    axes[2].set_title("Mean peak reserve by sum assured quintile")
+    axes[2].tick_params(axis="x", labelrotation=25)
+
     for bar, val in zip(bars, grouped.values):
-        axes[2].text(bar.get_x() + bar.get_width() / 2,
-                     bar.get_height() + grouped.max() / 1_000 * 0.01,
-                     f"£{val/1000:.1f}k", ha="center", va="bottom", fontsize=8)
+        axes[2].text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + grouped.max() / 1_000 * 0.01,
+            f"£{val / 1000:.1f}k",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
 
     fig.suptitle("Reserve vs Sum Assured", fontsize=12, fontweight="bold")
     fig.tight_layout()
     _save(fig, "16_reserve_vs_sum_assured.png")
+def plot_reserve_vs_interest_rate(
+    policies: list,
+    solver: ThieleSolver,
+    rate_min: float,
+    rate_max: float,
+    time_steps: int,
+) -> None:
+    """Controlled reserve sensitivity to interest rate.
 
+    Important interpretation note:
+        A cross-sectional scatter of different policies against their own issue
+        interest rates is not a clean Thiele sensitivity plot because age, term,
+        sum assured, mortality, and even premium all change across policies.
+        To isolate the PV effect of interest, this plot holds each contract fixed
+        and varies only the interest-rate assumption.
+    """
 
-def plot_reserve_vs_interest_rate(traj_df: pd.DataFrame) -> None:
-    """Reserve vs interest rate — higher rate should reduce reserve (PV effect)."""
-    peak_df = (
-        traj_df.groupby(["policy_id", "interest_rate", "age", "term"])["reserve"]
-        .max().reset_index().rename(columns={"reserve": "peak_reserve"})
+    representative_policies = [
+        min(policies, key=lambda p: p.age),
+        max(policies, key=lambda p: p.age),
+        min(policies, key=lambda p: p.sum_assured),
+        max(policies, key=lambda p: p.sum_assured),
+    ]
+    sample_step = max(1, len(policies) // 40)
+    sampled_policies = policies[::sample_step][:40]
+    interest_grid = np.linspace(rate_min, rate_max, 8)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    for policy in representative_policies:
+        peak_reserves: list[float] = []
+        for rate in interest_grid:
+            shocked_policy = replace(policy, scenario_interest_rate=float(rate))
+            trajectory = solver.solve(shocked_policy, num_steps=time_steps)
+            peak_reserves.append(float(np.max(trajectory.reserves)))
+
+        axes[0].plot(
+            interest_grid * 100,
+            peak_reserves,
+            linewidth=2,
+            label=f"Age {policy.age}, Term {policy.term}, SA £{policy.sum_assured/1000:.0f}k",
+        )
+
+    ratio_curves = []
+    for policy in sampled_policies:
+        curve: list[float] = []
+        for rate in interest_grid:
+            shocked_policy = replace(policy, scenario_interest_rate=float(rate))
+            trajectory = solver.solve(shocked_policy, num_steps=time_steps)
+            curve.append(float(np.max(trajectory.reserves) / max(policy.sum_assured, 1.0)))
+        ratio_curves.append(curve)
+
+    ratio_array = np.asarray(ratio_curves, dtype=float)
+    mean_ratio = ratio_array.mean(axis=0)
+    p10_ratio = np.percentile(ratio_array, 10, axis=0)
+    p90_ratio = np.percentile(ratio_array, 90, axis=0)
+
+    axes[1].plot(
+        interest_grid * 100,
+        mean_ratio,
+        color=PALETTE,
+        linewidth=2.5,
+        marker="o",
+        label="Mean peak reserve ratio",
+    )
+    axes[1].fill_between(
+        interest_grid * 100,
+        p10_ratio,
+        p90_ratio,
+        color=PALETTE,
+        alpha=0.18,
+        label="10–90% across fixed policies",
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-    sc = axes[0].scatter(
-        peak_df["interest_rate"] * 100, peak_df["peak_reserve"],
-        c=peak_df["term"], cmap="viridis", alpha=0.5, s=14, linewidths=0,
-    )
-    fig.colorbar(sc, ax=axes[0], label="Policy term (years)")
-    coeffs = np.polyfit(peak_df["interest_rate"], peak_df["peak_reserve"], 1)
-    x_line = np.linspace(peak_df["interest_rate"].min(), peak_df["interest_rate"].max(), 100)
-    axes[0].plot(x_line * 100, np.polyval(coeffs, x_line),
-                 color="#E03131", linewidth=1.5, linestyle="--",
-                 label=f"Slope {coeffs[0]:.0f} £/unit r")
     axes[0].set_xlabel("Interest rate (%)")
     axes[0].set_ylabel("Peak reserve (£)")
-    axes[0].set_title("Peak reserve vs interest rate(expected: negative slope — higher r lowers PV)")
+    axes[0].set_title("Fixed-contract peak reserve sensitivity\n(only interest rate varies)")
+    axes[0].grid(alpha=0.25)
     axes[0].legend(fontsize=8)
 
-    peak_df["rate_band"] = pd.cut(
-        peak_df["interest_rate"] * 100, bins=5,
-        labels=["1–2%", "2–3%", "3–5%", "5–6%", "6–8%"]
-    )
-    grouped = peak_df.groupby("rate_band", observed=True)["peak_reserve"].mean()
-    colors = ["#2F9E44" if i == 0 else "#E03131" if i == len(grouped)-1 else PALETTE
-              for i in range(len(grouped))]
-    bars = axes[1].bar(grouped.index, grouped.values, color=colors, edgecolor="white")
-    axes[1].set_xlabel("Interest rate band")
-    axes[1].set_ylabel("Mean peak reserve (£)")
-    axes[1].set_title("Mean peak reserve by interest rate band(expected: decreasing)")
-    for bar, val in zip(bars, grouped.values):
-        axes[1].text(bar.get_x() + bar.get_width() / 2,
-                     bar.get_height() + grouped.max() * 0.01,
-                     f"£{val:,.0f}", ha="center", va="bottom", fontsize=8)
+    axes[1].set_xlabel("Interest rate (%)")
+    axes[1].set_ylabel("Peak reserve / sum assured")
+    axes[1].set_title("Average normalised peak reserve sensitivity\nacross fixed-policy sample")
+    axes[1].grid(alpha=0.25)
+    axes[1].legend(fontsize=8)
 
-    fig.suptitle("Reserve vs Interest Rate", fontsize=12, fontweight="bold")
+    fig.suptitle("Reserve Sensitivity to Interest Rate", fontsize=12, fontweight="bold")
     fig.tight_layout()
     _save(fig, "17_reserve_vs_interest_rate.png")
 
@@ -621,7 +708,13 @@ def main() -> None:
         plot_reserve_vs_age(traj_df)
         plot_reserve_vs_mortality(traj_df)
         plot_reserve_vs_sum_assured(traj_df)
-        plot_reserve_vs_interest_rate(traj_df)
+        plot_reserve_vs_interest_rate(
+            policies,
+            solver,
+            rate_min=config.data.interest_rate_min,
+            rate_max=config.data.interest_rate_max,
+            time_steps=time_steps,
+        )
         plot_reserve_vs_premium(traj_df)
         print(f"\nAll outputs written to: {out_dir}/")
     else:

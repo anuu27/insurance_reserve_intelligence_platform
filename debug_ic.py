@@ -5,92 +5,47 @@ import numpy as np
 import torch
 
 from src.pipeline import (
-    build_model,
-    build_solver,
-    build_simulator,
     build_datasets,
+    build_model,
+    build_simulator,
+    build_solver,
 )
-
-from src.utils.config import (
-    ConfigLoader,
-    ensure_directories,
-)
-
-from src.utils.seed import set_seed
-from src.utils.device import DeviceManager
 from src.utils.checkpoint import CheckpointManager
+from src.utils.config import ConfigLoader, ensure_directories
+from src.utils.device import DeviceManager
+from src.utils.seed import set_seed
+from src.data.dataset import FEATURE_INDEX, FEATURE_SCALES
 
-from src.data.dataset import FEATURE_SCALES
-
-
-# ==========================================================
-# Load configuration
-# ==========================================================
 
 config = ConfigLoader.load(Path("configs/config.yaml"))
-
 ensure_directories(config)
-
 set_seed(config.seed)
-
 
 device_manager = DeviceManager(
     preferred_device=config.trainer.device,
     prefer_mixed_precision=False,
 )
 
-
-# ==========================================================
-# Load trained model
-# ==========================================================
-
 model = build_model(config)
 
-checkpoint_path = (
-    Path(config.paths.checkpoints_dir)
-    / "epoch_132.pt"
-)
-
-checkpoint = CheckpointManager(
-    config.paths.checkpoints_dir
-).load(
+checkpoint_path = Path(config.paths.checkpoints_dir) / "best_model.pt"
+checkpoint = CheckpointManager(config.paths.checkpoints_dir).load(
     checkpoint_path,
     map_location=device_manager.device,
 )
 
-model.load_state_dict(
-    checkpoint["model_state_dict"]
-)
-
+model.load_state_dict(checkpoint["model_state_dict"])
 model.to(device_manager.device)
 model.eval()
 
-
-# ==========================================================
-# Build training dataset
-# (needed for target_mean / target_std)
-# ==========================================================
-
 train_dataset, _, _, _ = build_datasets(config)
-
 solver = build_solver(config)
-
 simulator = build_simulator(config)
-
-
-# ==========================================================
-# One random policy
-# ==========================================================
 
 policy = simulator.generate_random_policies(1)[0]
 
 print("\nPolicy used\n")
 print(policy)
-
-
-# ==========================================================
-# Interest-rate sweep
-# ==========================================================
 
 rates = np.linspace(0.01, 0.08, 30)
 
@@ -98,118 +53,71 @@ predicted = []
 truth = []
 
 for r in rates:
+    scenario_rate = float(r)
 
-    policy.interest_rate = float(r)
+    policy.scenario_interest_rate = scenario_rate
+    policy.interest_rate = scenario_rate
 
-    # ----------------------------------
-    # Premium ratio (same as training)
-    # ----------------------------------
+    premium_ratio = policy.premium / max(policy.sum_assured, 1.0)
+    mortality = policy.mortality_profile.intensity_at(0.0)
 
-    premium_ratio = (
-        policy.premium
-        / max(policy.sum_assured, 1.0)
-    )
+    features = torch.zeros((1, len(FEATURE_INDEX)), dtype=torch.float32)
 
-    # ----------------------------------
-    # Build feature vector
-    # ----------------------------------
+    features[:, FEATURE_INDEX["time"]] = 0.0
+    features[:, FEATURE_INDEX["age"]] = float(policy.age)
+    features[:, FEATURE_INDEX["pricing_interest_rate"]] = float(policy.pricing_interest_rate)
+    features[:, FEATURE_INDEX["scenario_interest_rate"]] = scenario_rate
+    features[:, FEATURE_INDEX["premium_ratio"]] = premium_ratio
+    features[:, FEATURE_INDEX["sum_assured"]] = float(policy.sum_assured)
+    features[:, FEATURE_INDEX["mortality"]] = float(mortality)
 
-    features = torch.tensor(
-        [[
-            0.0,
-            float(policy.age),
-            policy.interest_rate,
-            premium_ratio,
-            policy.sum_assured,
-            policy.mortality_profile.intensity_at(0.0),
-        ]],
-        dtype=torch.float32,
-    )
+    features[:, FEATURE_INDEX["time"]] /= FEATURE_SCALES["time"]
+    features[:, FEATURE_INDEX["age"]] /= FEATURE_SCALES["age"]
+    features[:, FEATURE_INDEX["pricing_interest_rate"]] /= FEATURE_SCALES["pricing_interest_rate"]
 
-    # ----------------------------------
-    # Normalise EXACTLY like dataset.py
-    # ----------------------------------
-
-    features[:, 0] /= FEATURE_SCALES["time"]
-
-    features[:, 1] /= FEATURE_SCALES["age"]
-
-    features[:, 2] = (
-        features[:, 2]
-        - train_dataset.interest_mean
+    features[:, FEATURE_INDEX["scenario_interest_rate"]] = (
+        features[:, FEATURE_INDEX["scenario_interest_rate"]] - train_dataset.interest_mean
     ) / train_dataset.interest_std
 
-    features[:, 3] = (
-        features[:, 3]
-        - train_dataset.premium_mean
+    features[:, FEATURE_INDEX["premium_ratio"]] = (
+        features[:, FEATURE_INDEX["premium_ratio"]] - train_dataset.premium_mean
     ) / train_dataset.premium_std
 
-    features[:, 4] /= FEATURE_SCALES["sum_assured"]
-
-    features[:, 5] /= FEATURE_SCALES["mortality"]
+    features[:, FEATURE_INDEX["sum_assured"]] /= FEATURE_SCALES["sum_assured"]
+    features[:, FEATURE_INDEX["mortality"]] /= FEATURE_SCALES["mortality"]
 
     features = features.to(device_manager.device)
 
-    # ----------------------------------
-    # PINN prediction
-    # ----------------------------------
-
     with torch.no_grad():
-
         z = model(features).item()
-    
-        print(
-            f"rate={r:.4f} "
-            f"z={z:.6f}"
-        )
-    
-       
 
-        reserve = (
-            z * train_dataset.target_std
-            + train_dataset.target_mean
-        )
+    reserve = (
+        z * train_dataset.target_std
+        + train_dataset.target_mean
+    ) * policy.sum_assured
 
-        reserve *= policy.sum_assured
-
-    predicted.append(reserve)
-
-    # ----------------------------------
-    # Classical solver
-    # ----------------------------------
+    predicted.append(float(reserve))
 
     trajectory = solver.solve(
         policy=policy,
         num_steps=config.data.time_steps,
     )
 
-    truth.append(float(trajectory.reserves[0]))
+    thiele_reserve = float(trajectory.reserves[0])
+    truth.append(thiele_reserve)
 
     print(
-        f"Rate={r:.4f} | "
+        f"Rate={scenario_rate:.4f} | "
+        f"z={z:.6f} | "
         f"PINN={reserve:.2f} | "
-        f"Thiele={trajectory.reserves[0]:.2f}"
+        f"Thiele={thiele_reserve:.2f}"
     )
-
-# ==========================================================
-# Convert to numpy
-# ==========================================================
 
 predicted = np.asarray(predicted)
 truth = np.asarray(truth)
 
-
-# ==========================================================
-# Error metrics
-# ==========================================================
-
 mae = np.mean(np.abs(predicted - truth))
-
-rmse = np.sqrt(
-    np.mean(
-        (predicted - truth) ** 2
-    )
-)
+rmse = np.sqrt(np.mean((predicted - truth) ** 2))
 
 print("\n")
 print("=" * 60)
@@ -217,22 +125,10 @@ print(f"MAE  : {mae:.2f}")
 print(f"RMSE : {rmse:.2f}")
 print("=" * 60)
 
-
-# ==========================================================
-# Plot
-# ==========================================================
-
 report_dir = Path(config.paths.reports_dir)
+report_dir.mkdir(parents=True, exist_ok=True)
 
-report_dir.mkdir(
-    parents=True,
-    exist_ok=True,
-)
-
-plot_path = (
-    report_dir
-    / "interest_rate_validation.png"
-)
+plot_path = report_dir / "interest_rate_validation.png"
 
 plt.figure(figsize=(8, 5))
 
@@ -252,24 +148,16 @@ plt.plot(
 )
 
 plt.xlabel("Interest Rate (%)")
-plt.ylabel("Reserve (£)")
+plt.ylabel("Reserve")
 plt.title("Interest Rate Sensitivity")
-
 plt.grid(alpha=0.3)
-
 plt.legend()
-
 plt.tight_layout()
-
-plt.savefig(
-    plot_path,
-    dpi=300,
-)
+plt.savefig(plot_path, dpi=300)
 
 print(f"\nPlot saved to:\n{plot_path}")
 
 plt.show()
-
 
 print("\nNormalization")
 print(f"Interest mean : {train_dataset.interest_mean:.6f}")

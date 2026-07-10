@@ -504,18 +504,19 @@ class PolicySimulator:
     # ------------------------------------------------------------------
     # Policy builder
     # ------------------------------------------------------------------
-
     def _build_policy(
         self,
         policy_id: str,
         age: int,
         term: int,
-        interest_rate: float,
-        sum_assured: float,
+        pricing_interest_rate: float | None = None,
+        sum_assured: float | None = None,
         mortality_multiplier: float = 1.0,
         premium_multiplier: float = 1.0,
         risk_profile: RiskProfile | None = None,
         segment: PolicyMix = PolicyMix.STANDARD,
+        scenario_interest_rate: float | None = None,
+        interest_rate: float | None = None,
     ) -> Policy:
         """Construct a single fully risk-priced Policy object.
 
@@ -527,16 +528,36 @@ class PolicySimulator:
             policy_id: Unique identifier.
             age: Issue age.
             term: Policy term in years.
+<<<<<<< HEAD
             interest_rate: Valuation interest rate.
             sum_assured: Death benefit.
             mortality_multiplier: Scenario-level mortality scaling.
             premium_multiplier: Post-pricing scenario premium scaling.
             risk_profile: Underwriting classification (sampled if None).
             segment: Policy-mix segment label stored in metadata.
+=======
+            pricing_interest_rate: Interest-rate assumption used to price the
+                policy premium at issue.
+            sum_assured: Death benefit amount.
+            mortality_multiplier: Scenario multiplier for mortality.
+            premium_multiplier: Scenario multiplier applied after pricing.
+            risk_profile: Optional underwriting risk categories. A new synthetic
+                profile is sampled when this is omitted.
+            scenario_interest_rate: Optional reserve-valuation/stress-testing
+                rate. Defaults to the pricing rate when omitted.
+            interest_rate: Backward-compatible alias for
+                ``pricing_interest_rate`` retained for older internal callers
+                and tests.
+>>>>>>> upstream/circuits/interest-rate-experiment
 
         Returns:
             Policy: Fully constructed policy.
         """
+        resolved_pricing_rate = pricing_interest_rate if pricing_interest_rate is not None else interest_rate
+        if resolved_pricing_rate is None:
+            raise ValueError("Either pricing_interest_rate or interest_rate must be provided.")
+        if sum_assured is None:
+            raise ValueError("sum_assured must be provided.")
         profile = risk_profile or self._sample_risk_profile()
 
         # P1-1: multiply scenario factor AND underwriting factor into mortality
@@ -549,8 +570,14 @@ class PolicySimulator:
         net_premium, gross_premium = self._calculate_premium_rate(
             mortality_profile=mortality_profile,
             term=term,
-            interest_rate=interest_rate,
+            interest_rate=resolved_pricing_rate,
             sum_assured=sum_assured,
+        )
+        
+        valuation_rate = (
+            resolved_pricing_rate
+            if scenario_interest_rate is None
+            else scenario_interest_rate
         )
 
         return Policy(
@@ -558,7 +585,8 @@ class PolicySimulator:
             age=age,
             term=term,
             premium=gross_premium * premium_multiplier,
-            interest_rate=interest_rate,
+            pricing_interest_rate=resolved_pricing_rate,
+            scenario_interest_rate=valuation_rate,
             sum_assured=sum_assured,
             mortality_profile=mortality_profile,
             metadata={
@@ -567,6 +595,8 @@ class PolicySimulator:
                 "premium_loading": self.premium_loading,
                 "premium_multiplier": premium_multiplier,
                 "segment": segment.value,
+                "pricing_interest_rate": resolved_pricing_rate,
+                "scenario_interest_rate": valuation_rate,
             },
         )
 
@@ -812,16 +842,28 @@ class PolicySimulator:
         stressed: list[Policy] = []
         for policy in base_policies:
             risk_profile = RiskProfile.from_metadata(policy.metadata)
+            adjusted_mortality_multiplier = scenario.mortality_multiplier * risk_profile.combined_factor
+            mortality_profile = self._mortality_profile(
+                age=policy.age,
+                term=policy.term,
+                multiplier=adjusted_mortality_multiplier,
+            )
             stressed.append(
-                self._build_policy(
+                Policy(
                     policy_id=f"{policy.policy_id}_scenario",
                     age=policy.age,
                     term=policy.term,
-                    interest_rate=policy.interest_rate + scenario.interest_rate_shift,
+                    premium=policy.premium * scenario.premium_multiplier,
+                    pricing_interest_rate=policy.pricing_interest_rate,
+                    scenario_interest_rate=policy.scenario_interest_rate + scenario.interest_rate_shift,
                     sum_assured=policy.sum_assured * scenario.sum_assured_multiplier,
-                    mortality_multiplier=scenario.mortality_multiplier,
-                    premium_multiplier=scenario.premium_multiplier,
-                    risk_profile=risk_profile,
+                    mortality_profile=mortality_profile,
+                    metadata={
+                        **policy.metadata,
+                        "premium_multiplier": float(policy.metadata.get("premium_multiplier", 1.0)) * scenario.premium_multiplier,
+                        "pricing_interest_rate": policy.pricing_interest_rate,
+                        "scenario_interest_rate": policy.scenario_interest_rate + scenario.interest_rate_shift,
+                    },
                 )
             )
         return stressed

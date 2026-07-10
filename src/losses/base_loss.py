@@ -156,7 +156,7 @@ class BaseLoss(nn.Module, ABC):
             features,
         )
         
-        if name == "interest_rate":
+        if name == "scenario_interest_rate":
             scale = float(batch["interest_std"][0])
         else:
             scale = FEATURE_SCALES[name]
@@ -174,7 +174,7 @@ class BaseLoss(nn.Module, ABC):
             name: Variable name such as ``time``.
 
         Returns:
-            torch.Tensor: ``d²V/d(variable)²`` in real-world units.
+            torch.Tensor: ``dÂ²V/d(variable)Â²`` in real-world units.
         """
 
         features = self.require_batch_tensor(batch, "features")
@@ -187,8 +187,9 @@ class BaseLoss(nn.Module, ABC):
             create_graph=True,
             retain_graph=True,
         )[0]
-        if name == "interest_rate":
+        if name == "scenario_interest_rate":
             scale = float(batch["interest_std"][0])
         else:
             scale = FEATURE_SCALES[name]
         return second_grads[:, index : index + 1] / (scale**2)
+

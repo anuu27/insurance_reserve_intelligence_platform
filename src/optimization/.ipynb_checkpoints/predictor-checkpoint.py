@@ -69,12 +69,12 @@ class TrainingStatistics:
             raise ValueError("Cannot infer training statistics from an empty dataset.")
     
         interest_values = np.asarray(
-            [r.features[FEATURE_INDEX["interest_rate"]] for r in records],
+            [r.features[FEATURE_INDEX["scenario_interest_rate"]] for r in records],
             dtype=np.float32,
         )
     
         premium_values = np.asarray(
-            [r.features[FEATURE_INDEX["premium"]] for r in records],
+            [r.features[FEATURE_INDEX["premium_ratio"]] for r in records],
             dtype=np.float32,
         )
     
@@ -118,11 +118,11 @@ class TrainingStatistics:
         if not records:
             raise ValueError("Cannot infer training statistics from an empty dataset.")
         interest_values = np.asarray(
-            [record.features[FEATURE_INDEX["interest_rate"]] for record in records],
+            [record.features[FEATURE_INDEX["scenario_interest_rate"]] for record in records],
             dtype=np.float32,
         )
         premium_values = np.asarray(
-            [record.features[FEATURE_INDEX["premium"]] for record in records],
+            [record.features[FEATURE_INDEX["premium_ratio"]] for record in records],
             dtype=np.float32,
         )
         reserve_ratios = np.asarray(
@@ -185,12 +185,13 @@ class ReservePredictor:
     feature_names: tuple[str, ...] = (
         "time",
         "age",
-        "interest_rate",
-        "premium",
+        "pricing_interest_rate",
+        "scenario_interest_rate",
+        "premium_ratio",
         "sum_assured",
         "mortality",
     )
-    input_dim: int = 6
+    input_dim: int = 7
 
     def __init__(
         self,
@@ -274,7 +275,7 @@ class ReservePredictor:
         )
 
     def prepare_features(self, policy: Policy, time_point: float = 0.0) -> torch.Tensor:
-        """Construct the normalized six-feature model tensor for one policy.
+        """Construct the normalized seven-feature model tensor for one policy.
 
         Args:
             policy: Policy to value.
@@ -336,15 +337,16 @@ class ReservePredictor:
         ]
 
     def raw_features_from_policy(self, policy: Policy, time_point: float = 0.0) -> torch.Tensor:
-        """Build raw six-feature tensor from a policy before normalization."""
+        """Build raw seven-feature tensor from a policy before normalization."""
 
         clipped_time = self._clip_time_point(policy=policy, time_point=time_point)
         sum_assured = float(policy.sum_assured)
         raw_features = np.empty(self.input_dim, dtype=np.float32)
         raw_features[FEATURE_INDEX["time"]] = clipped_time
         raw_features[FEATURE_INDEX["age"]] = float(policy.age)
-        raw_features[FEATURE_INDEX["interest_rate"]] = float(policy.interest_rate)
-        raw_features[FEATURE_INDEX["premium"]] = float(policy.premium) / max(sum_assured, 1.0)
+        raw_features[FEATURE_INDEX["pricing_interest_rate"]] = float(policy.pricing_interest_rate)
+        raw_features[FEATURE_INDEX["scenario_interest_rate"]] = float(policy.scenario_interest_rate)
+        raw_features[FEATURE_INDEX["premium_ratio"]] = float(policy.premium) / max(sum_assured, 1.0)
         raw_features[FEATURE_INDEX["sum_assured"]] = sum_assured
         raw_features[FEATURE_INDEX["mortality"]] = float(
             policy.mortality_profile.intensity_at(clipped_time)
@@ -357,11 +359,12 @@ class ReservePredictor:
         features = raw_features.clone()
         features[..., FEATURE_INDEX["time"]] /= self.feature_scales["time"]
         features[..., FEATURE_INDEX["age"]] /= self.feature_scales["age"]
-        features[..., FEATURE_INDEX["interest_rate"]] = (
-            features[..., FEATURE_INDEX["interest_rate"]] - self.interest_mean
+        features[..., FEATURE_INDEX["pricing_interest_rate"]] /= self.feature_scales["pricing_interest_rate"]
+        features[..., FEATURE_INDEX["scenario_interest_rate"]] = (
+            features[..., FEATURE_INDEX["scenario_interest_rate"]] - self.interest_mean
         ) / self.interest_std
-        features[..., FEATURE_INDEX["premium"]] = (
-            features[..., FEATURE_INDEX["premium"]] - self.premium_mean
+        features[..., FEATURE_INDEX["premium_ratio"]] = (
+            features[..., FEATURE_INDEX["premium_ratio"]] - self.premium_mean
         ) / self.premium_std
         features[..., FEATURE_INDEX["sum_assured"]] /= self.feature_scales["sum_assured"]
         features[..., FEATURE_INDEX["mortality"]] /= self.feature_scales["mortality"]
@@ -443,3 +446,6 @@ def _read_stat(source: Any, name: str) -> float:
         if isinstance(container, dict) and name in container:
             return float(container[name])
     raise AttributeError(f"Training dataset is missing required statistic '{name}'.")
+
+
+
