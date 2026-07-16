@@ -10,8 +10,10 @@ from pathlib import Path
 
 import torch
 import pandas as pd
+import argparse
 
 from src.actuarial.actuarial_solver import ThieleSolver
+from src.data.dataset import build_policy_feature_array, normalize_raw_feature_array
 from src.visualization.reserve_plots import plot_reserve_trajectory
 
 from src.evaluators.evaluator import ReserveEvaluator
@@ -32,7 +34,7 @@ def main() -> None:
     config = ConfigLoader.load(Path("configs/config.yaml"))
     ensure_directories(config)
     set_seed(config.seed)
-
+    
     _, _, test_loader, test_dataset, test_policies = build_dataloaders(config)
     device_manager = DeviceManager(preferred_device=config.trainer.device, prefer_mixed_precision=False)
     model = build_model(config)
@@ -55,10 +57,12 @@ def main() -> None:
     evaluator.generate_sensitivity_report(
         sample_features,
         str(output_csv),
-        raw_features=sample_raw_features,
+        ref_raw_features=sample_raw_features,
         target_mean=test_dataset.target_mean,
         target_std=test_dataset.target_std,
+        interest_mean=test_dataset.interest_mean,
         interest_std=test_dataset.interest_std,
+        premium_mean=test_dataset.premium_mean,
         premium_std=test_dataset.premium_std,
     )
     print(f"Sensitivity report written to {output_csv}")
@@ -66,10 +70,7 @@ def main() -> None:
     # ==========================================
     # Reserve Trajectory Plot
     # ==========================================
-    print(type(test_policies))
-    print(type(test_policies[0]))
-    print(test_policies[0])
-    policy = test_policies[0]  # Using the first test policy for trajectory plotting
+    policy = test_policies[0]
 
     solver = ThieleSolver(
         method=config.solver.method,
@@ -83,16 +84,35 @@ def main() -> None:
         num_steps=config.data.time_steps,
     )
 
+    pinn_reserves: list[float] = []
+    model.eval()
+    for time_point in trajectory.times:
+        features = torch.tensor(
+            normalize_raw_feature_array(
+                build_policy_feature_array(policy=policy, time_point=float(time_point))
+            ),
+            dtype=torch.float32,
+            device=device_manager.device,
+        ).unsqueeze(0)
+        with torch.no_grad():
+            prediction_z = model(features)
+        reserve = (
+            (prediction_z.item() * test_dataset.target_std + test_dataset.target_mean)
+            * policy.sum_assured
+        )
+        pinn_reserves.append(float(reserve))
+
     trajectory_df = pd.DataFrame(
         {
             "time": trajectory.times,
-            "reserve": trajectory.reserves,
+            "classical_reserve": trajectory.reserves,
+            "pinn_reserve": pinn_reserves,
         }
     )
 
     reserve_plot_path = (
         Path(config.paths.reports_dir)
-        / "reserve_trajectory.png"
+        / "reserve_trajectory_comparison.png"
     )
 
     plot_reserve_trajectory(

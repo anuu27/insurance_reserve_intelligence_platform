@@ -10,6 +10,7 @@ from pathlib import Path
 
 import torch
 import pandas as pd
+import argparse
 
 from src.actuarial.actuarial_solver import ThieleSolver
 from src.data.dataset import build_policy_feature_array, normalize_raw_feature_array
@@ -33,7 +34,7 @@ def main() -> None:
     config = ConfigLoader.load(Path("configs/config.yaml"))
     ensure_directories(config)
     set_seed(config.seed)
-
+    
     _, _, test_loader, test_dataset, test_policies = build_dataloaders(config)
     device_manager = DeviceManager(preferred_device=config.trainer.device, prefer_mixed_precision=False)
     model = build_model(config)
